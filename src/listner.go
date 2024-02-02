@@ -15,7 +15,7 @@ func consumeStaleTaskChannel() {
 		ctx, cancel := context.WithTimeout(context.Background(), Config.StaleTaskCallbackContextTimeout)
 
 		stats_json, _ := json.Marshal(stale_task.Stats)
-		err := RedisClient.HSet(ctx, Config.StaleTaskSetKey, stale_task.TaskId.String(), stats_json).Err()
+		_, err := RedisClient.HSet(ctx, Config.StaleTaskSetKey, stale_task.TaskId.String(), stats_json).Result()
 		if err != nil {
 			Logger.Printf("Unable to send stale task (ID: %s) to Redis due to error: %s", stale_task.TaskId.String(), err)
 		} else {

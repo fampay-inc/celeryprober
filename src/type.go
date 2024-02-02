@@ -11,6 +11,7 @@ type TaskStats struct {
 	callBack_timer           *time.Timer
 	Name                     string    `json:"name"`
 	Args                     string    `json:"args"`
+	LatestEventTimestamp     float64   `json:"latest_event_timestamp"`
 	SentTimestamps           []float64 `json:"sent_timestamps"`
 	ReceivedTimestamps       []float64 `json:"received_timestamps"`
 	StartedTimestamps        []float64 `json:"started_timestamps"`
@@ -121,6 +122,9 @@ func (e *TaskSent) Process(stats *TaskStats) {
 	if e.Retries > stats.SentRetries {
 		stats.SentRetries = e.Retries
 	}
+	if e.Timestamp > stats.LatestEventTimestamp {
+		stats.LatestEventTimestamp = e.Timestamp
+	}
 	stats.EventsReceivedInSequence = true
 }
 
@@ -151,6 +155,9 @@ func (e *TaskReceived) Process(stats *TaskStats) {
 	stats.ReceivedTimestamps = append(stats.ReceivedTimestamps, e.Timestamp)
 	if e.Retries > stats.ReceivedRetries {
 		stats.ReceivedRetries = e.Retries
+	}
+	if e.Timestamp > stats.LatestEventTimestamp {
+		stats.LatestEventTimestamp = e.Timestamp
 	}
 	if len(stats.ReceivedTimestamps) > len(stats.SentTimestamps) {
 		stats.EventsReceivedInSequence = false
@@ -184,6 +191,9 @@ func (e *TaskStarted) Process(stats *TaskStats) {
 	if len(stats.StartedTimestamps) > len(stats.ReceivedTimestamps) {
 		stats.EventsReceivedInSequence = false
 	}
+	if e.Timestamp > stats.LatestEventTimestamp {
+		stats.LatestEventTimestamp = e.Timestamp
+	}
 }
 
 func (e *TaskStarted) IsTerminal() bool {
@@ -215,6 +225,9 @@ func (e *TaskSucceeded) Process(stats *TaskStats) {
 	if len(stats.SucceededTimestamps) > len(stats.StartedTimestamps) {
 		stats.EventsReceivedInSequence = false
 	}
+	if e.Timestamp > stats.LatestEventTimestamp {
+		stats.LatestEventTimestamp = e.Timestamp
+	}
 }
 
 func (e *TaskSucceeded) IsTerminal() bool {
@@ -245,6 +258,9 @@ func (e *TaskFailed) Process(stats *TaskStats) {
 	stats.Runtimes = append(stats.Runtimes, e.Runtime)
 	if len(stats.FailedTimestamps) > len(stats.StartedTimestamps) {
 		stats.EventsReceivedInSequence = false
+	}
+	if e.Timestamp > stats.LatestEventTimestamp {
+		stats.LatestEventTimestamp = e.Timestamp
 	}
 }
 
