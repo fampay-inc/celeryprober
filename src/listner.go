@@ -12,7 +12,7 @@ func handleStaleTasks() {
 	Logger.Println("Stale task channel listener ready")
 
 	for stale_task := range StaleTaskChannel {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), Config.StaleTaskCallbackContextTimeout)
 
 		stats_json, _ := json.Marshal(stale_task.Stats)
 		err := RedisClient.HSet(ctx, Config.StaleTaskSetKey, stale_task.TaskId.String(), stats_json).Err()
@@ -66,7 +66,7 @@ func consumeEventChannel() {
 		stats, ok := TaskStatsMap.Read(task_id)
 		if !ok {
 			stats = NewTaskStats()
-			stats.callBack_timer = time.AfterFunc(15*time.Minute, func() {
+			stats.callBack_timer = time.AfterFunc(Config.StaleTaskCallbackDelayDuration, func() {
 				stats_json, _ := json.Marshal(stats)
 				Logger.Printf("Task identified as stale, TaskId: %s, Stats: %s", task_id, stats_json)
 				StaleTaskChannel <- &StaleTask{
