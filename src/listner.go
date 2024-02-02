@@ -7,8 +7,8 @@ import (
 	"time"
 )
 
-func handleStaleTasks() {
-	defer Wg.Done()
+func consumeStaleTaskChannel() {
+	defer WaitGroup.StaleTaskChannelConsumer.Done()
 	Logger.Println("Stale task channel listener ready")
 
 	for stale_task := range StaleTaskChannel {
@@ -30,8 +30,8 @@ func handleStaleTasks() {
 	Logger.Println("Stale task channel closed")
 }
 
-func consumeEventChannel() {
-	defer Wg.Done()
+func consumePubSubChannel() {
+	defer WaitGroup.PubSubChannelConsumer.Done()
 	Logger.Println("PubSub channel listener ready")
 
 	for msg := range PubSub.Channel() {
@@ -66,9 +66,13 @@ func consumeEventChannel() {
 		stats, ok := TaskStatsMap.Read(task_id)
 		if !ok {
 			stats = NewTaskStats()
+			WaitGroup.Callback.Add(1)
 			stats.callBack_timer = time.AfterFunc(Config.StaleTaskCallbackDelayDuration, func() {
+				defer WaitGroup.Callback.Done()
+
 				stats_json, _ := json.Marshal(stats)
 				Logger.Printf("Task identified as stale, TaskId: %s, Stats: %s", task_id, stats_json)
+
 				StaleTaskChannel <- &StaleTask{
 					TaskId: task_id,
 					Stats:  stats,
@@ -78,7 +82,9 @@ func consumeEventChannel() {
 		}
 
 		if event.IsTerminal() {
-			stats.callBack_timer.Stop()
+			if timer_stopped := stats.callBack_timer.Stop(); timer_stopped {
+				WaitGroup.Callback.Done()
+			}
 			TaskStatsMap.Delete(task_id)
 		} else {
 			event.Process(stats)

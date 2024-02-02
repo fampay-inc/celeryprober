@@ -1,38 +1,13 @@
 package main
 
 import (
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
 )
 
-type RawEvent struct {
-	Body            string            `json:"body"`
-	ContentEncoding string            `json:"content-encoding`
-	ContentType     string            `json:"content-type"`
-	Headers         map[string]string `json:"headers"`
-	Properties      map[string]any    `json:"properties"`
-}
-
-type TaskEventType string
-
-const (
-	TaskEventTypeSent      TaskEventType = "task-sent"
-	TaskEventTypeReceived  TaskEventType = "task-received"
-	TaskEventTypeStarted   TaskEventType = "task-started"
-	TaskEventTypeSucceeded TaskEventType = "task-succeeded"
-	TaskEventTypeFailed    TaskEventType = "task-failed"
-)
-
-type TaskEvent interface {
-	ID() uuid.UUID
-	Process(stats *TaskStats)
-	Type() TaskEventType
-	IsTerminal() bool
-}
-
 type TaskStats struct {
-	// mutex                    *sync.RWMutex
 	callBack_timer           *time.Timer
 	Name                     string    `json:"name"`
 	Args                     string    `json:"args"`
@@ -49,7 +24,6 @@ type TaskStats struct {
 
 func NewTaskStats() *TaskStats {
 	return &TaskStats{
-		// mutex:               &sync.RWMutex{},
 		SentTimestamps:      []float64{},
 		ReceivedTimestamps:  []float64{},
 		StartedTimestamps:   []float64{},
@@ -57,6 +31,12 @@ func NewTaskStats() *TaskStats {
 		FailedTimestamps:    []float64{},
 		Runtimes:            []float64{},
 	}
+}
+
+type waitGroup struct {
+	PubSubChannelConsumer    sync.WaitGroup
+	StaleTaskChannelConsumer sync.WaitGroup
+	Callback                 sync.WaitGroup
 }
 
 type taskStatsMap map[uuid.UUID]*TaskStats
@@ -86,6 +66,31 @@ func (m taskStatsMap) Delete(key uuid.UUID) {
 type StaleTask struct {
 	TaskId uuid.UUID
 	Stats  *TaskStats
+}
+
+type RawEvent struct {
+	Body            string            `json:"body"`
+	ContentEncoding string            `json:"content-encoding`
+	ContentType     string            `json:"content-type"`
+	Headers         map[string]string `json:"headers"`
+	Properties      map[string]any    `json:"properties"`
+}
+
+type TaskEventType string
+
+const (
+	TaskEventTypeSent      TaskEventType = "task-sent"
+	TaskEventTypeReceived  TaskEventType = "task-received"
+	TaskEventTypeStarted   TaskEventType = "task-started"
+	TaskEventTypeSucceeded TaskEventType = "task-succeeded"
+	TaskEventTypeFailed    TaskEventType = "task-failed"
+)
+
+type TaskEvent interface {
+	ID() uuid.UUID
+	Process(stats *TaskStats)
+	Type() TaskEventType
+	IsTerminal() bool
 }
 
 // +-------------------- Task Sent Begins --------------------+

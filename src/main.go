@@ -14,7 +14,7 @@ import (
 var (
 	Config            *Configuration
 	Logger            *log.Logger
-	Wg                sync.WaitGroup
+	WaitGroup         waitGroup
 	RedisClient       *redis.Client
 	PubSub            *redis.PubSub
 	TaskStatsMap      taskStatsMap
@@ -47,13 +47,32 @@ func initializeStore() {
 }
 
 func initializeListners() {
-	Wg.Add(2)
-	go handleStaleTasks()
-	go consumeEventChannel()
+	WaitGroup.StaleTaskChannelConsumer.Add(1)
+	go consumeStaleTaskChannel()
+	WaitGroup.PubSubChannelConsumer.Add(1)
+	go consumePubSubChannel()
 }
 
 func waitForInterrupt(ctx context.Context) {
 	<-ctx.Done()
+}
+
+func gracefulShutdown(ctx context.Context) {
+	waitForInterrupt(ctx)
+	Logger.Println("Waiting for tasks to be finished...")
+
+	PubSub.Close()
+	WaitGroup.PubSubChannelConsumer.Wait()
+
+	WaitGroup.Callback.Wait()
+	Logger.Println("All scheduled callbacks have been executed")
+
+	close(StaleTaskChannel)
+	WaitGroup.StaleTaskChannelConsumer.Wait()
+
+	RedisClient.Close()
+
+	Logger.Println("Service stopped gracefully")
 }
 
 func main() {
@@ -67,15 +86,5 @@ func main() {
 	initializeStore()
 	initializeListners()
 
-	// Graceful shutdown begins here...
-	waitForInterrupt(ctx)
-	Logger.Println("Waiting for tasks to be finished...")
-
-	close(StaleTaskChannel)
-	PubSub.Close()
-	Wg.Wait()
-
-	RedisClient.Close()
-
-	Logger.Println("Service stopped gracefully")
+	gracefulShutdown(ctx)
 }
