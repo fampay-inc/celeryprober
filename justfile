@@ -2,6 +2,6 @@ run flags='':
     go run {{flags}} ./src
 run-cron flags='':
     APPLICATION_MODE=cron go run {{flags}} ./src
-build:
+build flags='':
     mkdir -p build
-    go build -o build/exec-monitor ./src
+    CGO_ENABLED=0 go build -ldflags="-w -s" {{flags}} -o build/exec-monitor ./src

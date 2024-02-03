@@ -57,9 +57,10 @@ func gracefulShutdown(ctx context.Context) {
 	PubSub.Close()
 	WaitGroup.PubSubChannelConsumer.Wait()
 
+	Logger.Println("Waiting for scheduled callbacks to be executed...")
 	WaitGroup.Callback.Wait()
-	Logger.Println("All scheduled callbacks have been executed")
 
+	Logger.Println("Waiting for stale tasks to be pushed to Redis...")
 	close(StaleTaskChannel)
 	WaitGroup.StaleTaskChannelConsumer.Wait()
 
