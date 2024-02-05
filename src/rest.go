@@ -39,5 +39,10 @@ func RunRESTServer() {
 	})
 
 	// Starting fiber server
-	go Logger.Fatal(app.Listen(fmt.Sprintf(":%v", Config.RESTServerPort)))
+	go func() {
+		err := app.Listen(fmt.Sprintf(":%v", Config.RESTServerPort))
+		if err != nil {
+			Logger.Fatal(err)
+		}
+	}()
 }
