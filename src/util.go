@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -34,7 +35,7 @@ func CheckIfEventAlreadyProcessed(timestamp float64, processed_timestamps []floa
 	return false
 }
 
-func SendFileToSlackChannel(message, file_name string, file_content []byte) (status_code int, body []byte) {
+func SendFileToSlackChannel(message, file_name string, file_content []byte) (status_code int, body []byte, err error) {
 	url := "https://slack.com/api/files.upload"
 	payload := &bytes.Buffer{}
 	writer := multipart.NewWriter(payload)
@@ -46,42 +47,53 @@ func SendFileToSlackChannel(message, file_name string, file_content []byte) (sta
 
 	fileWriter, err := writer.CreateFormFile("file", "task-drop-report.json")
 	if err != nil {
-		Logger.Fatalln("Error creating form field:", err)
+		Logger.Println("Error creating form field:", err)
+		return
 	}
 
 	fileWriter.Write(file_content)
 
 	request, err := http.NewRequest("POST", url, payload)
 	if err != nil {
-		Logger.Fatalln("Error creating request:", err)
+		Logger.Println("Error creating request:", err)
+		return
 	}
 
 	request.Header.Set("Content-Type", writer.FormDataContentType())
 	client := http.Client{}
 	response, err := client.Do(request)
 	if err != nil {
-		Logger.Fatalln("Error sending request:", err)
+		Logger.Println("Error sending request:", err)
+		return
 	}
 
 	body, err = io.ReadAll(response.Body)
 	if err != nil {
-		Logger.Fatalln("Error parsing response body:", err)
+		Logger.Println("Error parsing response body:", err)
+		return
 	}
 	status_code = response.StatusCode
 
 	return
 }
 
-func SendMessageToSlackChannel(message string) (status_code int, body []byte) {
-	url := "https://slack.com/api/chat.postMessage"
-	payload := strings.NewReader(fmt.Sprintf(`{
-		"channel": "%s",
-		"text": ""
-	}`, message))
+type SlackSendMessageAPIPayload struct {
+	Channel string `json:"channel"`
+	Text    string `json:"text"`
+}
 
-	request, err := http.NewRequest("POST", url, payload)
+func SendMessageToSlackChannel(message string) (status_code int, body []byte, err error) {
+	url := "https://slack.com/api/chat.postMessage"
+	payload := &SlackSendMessageAPIPayload{
+		Channel: Config.SlackChannelId,
+		Text:    message,
+	}
+	payload_json, _ := json.Marshal(payload)
+
+	request, err := http.NewRequest("POST", url, strings.NewReader(string(payload_json)))
 	if err != nil {
-		Logger.Fatalln("Error creating request:", err)
+		Logger.Println("Error creating request:", err)
+		return
 	}
 
 	request.Header.Set("Content-Type", "application/json")
@@ -89,12 +101,14 @@ func SendMessageToSlackChannel(message string) (status_code int, body []byte) {
 	client := http.Client{}
 	response, err := client.Do(request)
 	if err != nil {
-		Logger.Fatalln("Error sending request:", err)
+		Logger.Println("Error sending request:", err)
+		return
 	}
 
 	body, err = io.ReadAll(response.Body)
 	if err != nil {
-		Logger.Fatalln("Error parsing response body:", err)
+		Logger.Println("Error parsing response body:", err)
+		return
 	}
 	status_code = response.StatusCode
 

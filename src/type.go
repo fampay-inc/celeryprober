@@ -34,6 +34,70 @@ func NewTaskStats() *TaskStats {
 	}
 }
 
+func (stats *TaskStats) IsTaskLifecycleComplete() bool {
+	succeeded_event_len := len(stats.SucceededTimestamps)
+	failed_event_len := len(stats.FailedTimestamps)
+
+	if succeeded_event_len == 0 && failed_event_len == 0 {
+		return false
+	}
+
+	sent_event_length := len(stats.SentTimestamps)
+	received_event_length := len(stats.ReceivedTimestamps)
+	started_event_length := len(stats.StartedTimestamps)
+
+	retries_sum := stats.SentRetries + stats.ReceivedRetries
+
+	if succeeded_event_len > 0 {
+		is_success_lifecycle_complete :=
+			sent_event_length == received_event_length &&
+				received_event_length == started_event_length &&
+				started_event_length == succeeded_event_len
+		if is_success_lifecycle_complete {
+			return true
+		}
+
+		is_retry_success_lifecycle_complete :=
+			retries_sum != 0 &&
+				retries_sum%2 == 0 &&
+				sent_event_length == received_event_length &&
+				received_event_length == started_event_length &&
+				succeeded_event_len == 1
+		if is_retry_success_lifecycle_complete {
+			return true
+		}
+	} else if failed_event_len > 0 {
+		is_failed_lifecycle_complete :=
+			sent_event_length == received_event_length &&
+				received_event_length == started_event_length &&
+				started_event_length == failed_event_len
+		if is_failed_lifecycle_complete {
+			return true
+		}
+
+		is_retry_failed_lifecycle_complete :=
+			retries_sum != 0 &&
+				retries_sum%2 == 0 &&
+				sent_event_length == received_event_length &&
+				received_event_length == started_event_length &&
+				failed_event_len == 1
+		if is_retry_failed_lifecycle_complete {
+			return true
+		}
+	}
+
+	is_possible_late_ack_case_lifecycle_complete :=
+		received_event_length > 1 &&
+			received_event_length == started_event_length &&
+			received_event_length > sent_event_length &&
+			sent_event_length >= 1
+	if is_possible_late_ack_case_lifecycle_complete {
+		return true
+	}
+
+	return false
+}
+
 type waitGroup struct {
 	PubSubChannelConsumer    sync.WaitGroup
 	StaleTaskChannelConsumer sync.WaitGroup
@@ -102,6 +166,7 @@ type TaskSent struct {
 	Name      string    `json:"name"`
 	Args      string    `json:"args"`
 	Retries   uint8     `json:"retries"`
+	Queue     string    `json:"queue"`
 }
 
 func (e *TaskSent) ID() uuid.UUID {
@@ -254,7 +319,7 @@ func (e *TaskFailed) Process(stats *TaskStats) {
 	if CheckIfEventAlreadyProcessed(e.Timestamp, stats.FailedTimestamps) {
 		return
 	}
-	stats.StartedTimestamps = append(stats.StartedTimestamps, e.Timestamp)
+	stats.FailedTimestamps = append(stats.FailedTimestamps, e.Timestamp)
 	stats.Runtimes = append(stats.Runtimes, e.Runtime)
 	if len(stats.FailedTimestamps) > len(stats.StartedTimestamps) {
 		stats.EventsReceivedInSequence = false

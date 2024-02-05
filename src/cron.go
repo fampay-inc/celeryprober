@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 )
 
 type DailyReport struct {
@@ -39,9 +41,16 @@ func (report *DailyReport) SentToSlack() {
 
 	Logger.Println("Report JSON:", string(report_json))
 
-	status_code, body := SendFileToSlackChannel("Task drop report", "task-drop-report.json", report_json)
+	status_code, body, err := SendFileToSlackChannel("Task drop report", "task-drop-report.json", report_json)
 
-	Logger.Printf("Slack API Response Status Code: %d, Response Body: %s", status_code, body)
+	if err != nil {
+		Logger.Println("Unable to upload file to slack due to error:", err)
+	} else {
+		Logger.Printf("Slack File Upload API Response Status Code: %d, Response Body: %s", status_code, body)
+	}
+
+	// FIXME: Sending report as text since slack file upload API isn't working right now.
+	SendMessageToSlackChannel(fmt.Sprintf("Task Drop Report:\n```%s```", strings.ReplaceAll(string(report_json), "\\", "")))
 }
 
 func cron() {
@@ -54,30 +63,32 @@ func cron() {
 	}
 
 	report := NewDailyReport()
-	dropped_task_id_list := []string{}
+	task_id_list := []string{}
 
 	for task_id, stats_json := range result {
 		stats := &TaskStats{}
 		if err := json.Unmarshal([]byte(stats_json), stats); err != nil {
 			Logger.Printf("Unable to unmarshal stats object, json: %s", stats_json)
+			continue
 		}
 
 		if stats.EventsReceivedInSequence {
 			report.AddDroppedTask(task_id, stats_json)
-			dropped_task_id_list = append(dropped_task_id_list, task_id)
 		} else {
 			report.AddUnsureTask(task_id, stats_json)
 		}
+
+		task_id_list = append(task_id_list, task_id)
 	}
 
 	report.SentToSlack()
 
-	if len(dropped_task_id_list) != 0 {
-		deleted_key_count, err := RedisClient.HDel(ctx, Config.StaleTaskSetKey, dropped_task_id_list...).Result()
+	if len(task_id_list) != 0 {
+		deleted_key_count, err := RedisClient.HDel(ctx, Config.StaleTaskSetKey, task_id_list...).Result()
 		if err != nil {
-			Logger.Fatalln("Failed to delete dropped task objects from Redis due to error:", err)
+			Logger.Fatalln("Failed to delete task objects from Redis due to error:", err)
 		}
 
-		Logger.Println("Deletion of dropped tasks from Redis hash succeeded, deleted key count:", deleted_key_count)
+		Logger.Println("Deletion of tasks from Redis hash succeeded, deleted key count:", deleted_key_count)
 	}
 }

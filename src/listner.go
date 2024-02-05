@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -17,13 +18,18 @@ func consumeStaleTaskChannel() {
 
 		stats_json, _ := json.Marshal(stale_task.Stats)
 
-		SendMessageToSlackChannel(fmt.Sprintf(
-			`Stale task detected. Task ID: %s, Stats: %s`,
+		status_code, body, err := SendMessageToSlackChannel(fmt.Sprintf(
+			"Stale task detected\nTask ID: `%s`\nStats:\n```%s```",
 			stale_task.TaskId.String(),
-			string(stats_json),
+			strings.ReplaceAll(string(stats_json), "\\", ""),
 		))
+		if err != nil {
+			Logger.Printf("Unable to send slack message for stale task (ID: %s): %s", stale_task.TaskId.String(), err)
+		} else {
+			Logger.Printf("Slack Chat PostMessage API Response Status Code: %d, Response Body: %s", status_code, body)
+		}
 
-		_, err := RedisClient.HSet(ctx, Config.StaleTaskSetKey, stale_task.TaskId.String(), stats_json).Result()
+		_, err = RedisClient.HSet(ctx, Config.StaleTaskSetKey, stale_task.TaskId.String(), stats_json).Result()
 		if err != nil {
 			Logger.Printf("Unable to send stale task (ID: %s) to Redis due to error: %s", stale_task.TaskId.String(), err)
 		} else {
@@ -70,6 +76,14 @@ func consumePubSubChannel() {
 
 		Logger.Printf("Successfully parsed event: %s", event_json_bytearray)
 
+		if event.Type() == TaskEventTypeSent {
+			task_sent_event := event.(*TaskSent)
+			if strings.HasSuffix(task_sent_event.Queue, "dlq") {
+				// Don't want to process DLQ events
+				continue
+			}
+		}
+
 		task_id := event.ID()
 		stats, ok := TaskStatsMap.Read(task_id)
 		if !ok {
@@ -89,13 +103,13 @@ func consumePubSubChannel() {
 			TaskStatsMap.Write(task_id, stats)
 		}
 
-		if event.IsTerminal() {
+		event.Process(stats)
+		if stats.IsTaskLifecycleComplete() {
 			if timer_stopped := stats.callBack_timer.Stop(); timer_stopped {
 				WaitGroup.Callback.Done()
 			}
 			TaskStatsMap.Delete(task_id)
-		} else {
-			event.Process(stats)
+			Logger.Printf("Removed Task (ID: %s) from memory since lifecycle completion reached", task_id)
 		}
 	}
 
