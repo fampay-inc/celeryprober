@@ -92,6 +92,10 @@ func consumePubSubChannel() {
 			stats.callBack_timer = time.AfterFunc(Config.StaleTaskCallbackDelayDuration, func() {
 				defer WaitGroup.Callback.Done()
 
+				if len(stats.SentTimestamps) == 0 {
+					return
+				}
+
 				stats_json, _ := json.Marshal(stats)
 				Logger.Printf("Task identified as stale, TaskId: %s, Stats: %s", task_id, stats_json)
 
