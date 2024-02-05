@@ -15,14 +15,14 @@ const (
 
 type Configuration struct {
 	ServiceName                          string
+	RESTServerPort                       int             `env:"REST_SERVER_PORT" envDefault:"3000"`
 	Mode                                 ApplicationMode `env:"APPLICATION_MODE" envDefault:"server"`
 	StaleTaskCallbackContextTimeoutInSec int             `env:"STALE_TASK_CALLBACK_CONTEXT_TIMEOUT_IN_SEC" envDefault:"5"`
 	StaleTaskCallbackDelayDurationInMin  int             `env:"STALE_TASK_CALLBACK_DELAY_DURATION_IN_MIN" envDefault:"15"`
 	RedisURL                             string          `env:"REDIS_URL" envDefault:"redis://localhost:6379/6"`
 	StaleTaskSetKey                      string          `env:"STALE_TASK_SET_KEY" envDefault:"stale_tasks"`
 	TaskEventChannels                    []string        `env:"TASK_EVENT_CHANNELS" envDefault:"/6.celeryev/task.sent,/6.celeryev/task.received,/6.celeryev/task.started,/6.celeryev/task.succeeded,/6.celeryev/task.failed" envSeparator:","`
-	SlackFileUploadUrl                   string          `env:"SLACK_FILE_UPLOAD_URL" envDefault:"https://slack.com/api/files.upload"`
-	SlackChannelAccessToken              string          `env:"SLACK_CHANNEL_ACCESS_TOKEN" envDefault:""`
+	SlackAccessToken                     string          `env:"SLACK_ACCESS_TOKEN" envDefault:""`
 	SlackChannelId                       string          `env:"SLACK_CHANNEL_ID" envDefault:""`
 
 	StaleTaskCallbackContextTimeout time.Duration

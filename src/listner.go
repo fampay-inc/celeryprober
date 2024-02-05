@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"time"
 )
 
@@ -15,6 +16,13 @@ func consumeStaleTaskChannel() {
 		ctx, cancel := context.WithTimeout(context.Background(), Config.StaleTaskCallbackContextTimeout)
 
 		stats_json, _ := json.Marshal(stale_task.Stats)
+
+		SendMessageToSlackChannel(fmt.Sprintf(
+			`Stale task detected. Task ID: %s, Stats: %s`,
+			stale_task.TaskId.String(),
+			string(stats_json),
+		))
+
 		_, err := RedisClient.HSet(ctx, Config.StaleTaskSetKey, stale_task.TaskId.String(), stats_json).Result()
 		if err != nil {
 			Logger.Printf("Unable to send stale task (ID: %s) to Redis due to error: %s", stale_task.TaskId.String(), err)

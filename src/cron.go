@@ -1,12 +1,8 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"io"
-	"mime/multipart"
-	"net/http"
 )
 
 type DailyReport struct {
@@ -43,39 +39,9 @@ func (report *DailyReport) SentToSlack() {
 
 	Logger.Println("Report JSON:", string(report_json))
 
-	payload := &bytes.Buffer{}
-	writer := multipart.NewWriter(payload)
-	defer writer.Close()
+	status_code, body := SendFileToSlackChannel("Task drop report", "task-drop-report.json", report_json)
 
-	writer.WriteField("token", Config.SlackChannelAccessToken)
-	writer.WriteField("channels", Config.SlackChannelId)
-	writer.WriteField("initial_comment", "Task drop report")
-
-	fileWriter, err := writer.CreateFormFile("file", "task-drop-report.json")
-	if err != nil {
-		Logger.Fatalln("Error creating form field:", err)
-	}
-
-	fileWriter.Write(report_json)
-
-	request, err := http.NewRequest("POST", Config.SlackFileUploadUrl, payload)
-	if err != nil {
-		Logger.Fatalln("Error creating request:", err)
-	}
-
-	request.Header.Set("Content-Type", writer.FormDataContentType())
-	client := http.Client{}
-	response, err := client.Do(request)
-	if err != nil {
-		Logger.Fatalln("Error sending request:", err)
-	}
-
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		Logger.Fatalln("Error parsing response body:", err)
-	}
-
-	Logger.Printf("Slack API Response Status Code: %d, Response Body: %s", response.StatusCode, body)
+	Logger.Printf("Slack API Response Status Code: %d, Response Body: %s", status_code, body)
 }
 
 func cron() {

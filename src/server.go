@@ -79,5 +79,7 @@ func server() {
 	initializeStore()
 	initializeListners()
 
+	RunRESTServer()
+
 	gracefulShutdown(ctx)
 }
