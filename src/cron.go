@@ -3,34 +3,23 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"strings"
 )
 
 type DailyReport struct {
 	TotalDroppedCount uint64            `json:"total_dropped_count"`
-	TotalUnsureCount  uint64            `json:"total_unsure_count"`
 	DroppedTasks      map[string]string `json:"dropped_tasks"`
-	UnsureTasks       map[string]string `json:"unsure_tasks"`
 }
 
 func NewDailyReport() *DailyReport {
 	return &DailyReport{
 		TotalDroppedCount: 0,
-		TotalUnsureCount:  0,
 		DroppedTasks:      map[string]string{},
-		UnsureTasks:       map[string]string{},
 	}
 }
 
 func (report *DailyReport) AddDroppedTask(task_id, stats_json string) {
 	report.DroppedTasks[task_id] = stats_json
 	report.TotalDroppedCount++
-}
-
-func (report *DailyReport) AddUnsureTask(task_id, stats_json string) {
-	report.UnsureTasks[task_id] = stats_json
-	report.TotalUnsureCount++
 }
 
 func (report *DailyReport) SentToSlack() {
@@ -48,9 +37,6 @@ func (report *DailyReport) SentToSlack() {
 	} else {
 		Logger.Printf("Slack File Upload API Response Status Code: %d, Response Body: %s", status_code, body)
 	}
-
-	// FIXME: Sending report as text since slack file upload API isn't working right now.
-	SendMessageToSlackChannel(fmt.Sprintf("Task Drop Report:\n```%s```", strings.ReplaceAll(string(report_json), "\\", "")))
 }
 
 func cron() {
@@ -72,12 +58,7 @@ func cron() {
 			continue
 		}
 
-		if stats.EventsReceivedInSequence {
-			report.AddDroppedTask(task_id, stats_json)
-		} else {
-			report.AddUnsureTask(task_id, stats_json)
-		}
-
+		report.AddDroppedTask(task_id, stats_json)
 		task_id_list = append(task_id_list, task_id)
 	}
 
