@@ -98,6 +98,31 @@ func (stats *TaskStats) IsTaskLifecycleComplete() bool {
 	return false
 }
 
+func (stats *TaskStats) GetLatestEvent() TaskEventType {
+	if len(stats.Runtimes) > 0 {
+		for _, t := range stats.SucceededTimestamps {
+			if t == stats.LatestEventTimestamp {
+				return TaskEventTypeSucceeded
+			}
+		}
+		return TaskEventTypeFailed
+	}
+
+	for _, t := range stats.StartedTimestamps {
+		if t == stats.LatestEventTimestamp {
+			return TaskEventTypeStarted
+		}
+	}
+
+	for _, t := range stats.ReceivedTimestamps {
+		if t == stats.LatestEventTimestamp {
+			return TaskEventTypeReceived
+		}
+	}
+
+	return TaskEventTypeSent
+}
+
 type waitGroup struct {
 	PubSubChannelConsumer    sync.WaitGroup
 	StaleTaskChannelConsumer sync.WaitGroup

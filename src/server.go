@@ -80,6 +80,7 @@ func server() {
 	initializeListners()
 
 	RunRESTServer()
+	RunMetricsServer()
 
 	gracefulShutdown(ctx)
 }

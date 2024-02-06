@@ -16,6 +16,7 @@ const (
 type Configuration struct {
 	ServiceName                          string
 	RESTServerPort                       int             `env:"REST_SERVER_PORT" envDefault:"3000"`
+	MetricServerPort                     int             `env:"METRIC_SERVER_PORT" envDefault:"2112"`
 	Mode                                 ApplicationMode `env:"APPLICATION_MODE" envDefault:"server"`
 	StaleTaskCallbackContextTimeoutInSec int             `env:"STALE_TASK_CALLBACK_CONTEXT_TIMEOUT_IN_SEC" envDefault:"5"`
 	StaleTaskCallbackDelayDurationInMin  int             `env:"STALE_TASK_CALLBACK_DELAY_DURATION_IN_MIN" envDefault:"15"`
