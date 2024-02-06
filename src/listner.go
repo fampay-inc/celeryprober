@@ -76,11 +76,17 @@ func consumePubSubChannel() {
 
 		Logger.Printf("Successfully parsed event: %s", event_json_bytearray)
 
+		var task_start_delay time.Duration
 		if event.Type() == TaskEventTypeSent {
 			task_sent_event := event.(*TaskSent)
 			if strings.HasSuffix(task_sent_event.Queue, "dlq") {
 				// Don't want to process DLQ events
 				continue
+			}
+
+			task_start_delay, err = task_sent_event.GetTaskStartDelayDuration()
+			if err != nil {
+				Logger.Printf("Unable to parse eta time due to error: %s", err)
 			}
 		}
 
@@ -89,10 +95,13 @@ func consumePubSubChannel() {
 		if !ok {
 			stats = NewTaskStats()
 			WaitGroup.Callback.Add(1)
-			stats.callBack_timer = time.AfterFunc(Config.StaleTaskCallbackDelayDuration, func() {
+			stats.callBack_timer = time.AfterFunc(Config.StaleTaskCallbackDelayDuration+task_start_delay, func() {
 				defer WaitGroup.Callback.Done()
 
-				if len(stats.SentTimestamps) == 0 {
+				if len(stats.Runtimes) > 0 {
+					// Terminal event received for this task
+					// Hence cannot be considered as a task drop case
+					TaskStatsMap.Delete(task_id)
 					return
 				}
 

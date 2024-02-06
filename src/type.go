@@ -167,6 +167,7 @@ type TaskSent struct {
 	Args      string    `json:"args"`
 	Retries   uint8     `json:"retries"`
 	Queue     string    `json:"queue"`
+	ETA       string    `json:"eta"`
 }
 
 func (e *TaskSent) ID() uuid.UUID {
@@ -195,6 +196,24 @@ func (e *TaskSent) Process(stats *TaskStats) {
 
 func (e *TaskSent) IsTerminal() bool {
 	return false
+}
+
+func (e *TaskSent) GetTaskStartDelayDuration() (duration time.Duration, err error) {
+	if e.ETA == "" {
+		return
+	}
+
+	task_start_time, err := time.Parse(time.RFC3339Nano, e.ETA)
+	if err != nil {
+		return
+	}
+
+	task_start_delay_in_sec := task_start_time.Unix() - time.Now().Unix()
+	if task_start_delay_in_sec > 0 {
+		duration = time.Duration(task_start_delay_in_sec) * time.Second
+	}
+
+	return
 }
 
 // +-------------------- Task Received Begins --------------------+
