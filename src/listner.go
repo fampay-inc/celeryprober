@@ -124,6 +124,13 @@ func consumePubSubChannel() {
 				}
 			})
 			TaskStatsMap.Write(task_id, stats)
+		} else if event.Type() == TaskEventTypeSent {
+			/*
+				Resets the callback timer if:
+				- task-sent event is received out of order
+				- task-sent event is received in case of task retry
+			*/
+			stats.callBack_timer.Reset(Config.StaleTaskCallbackDelayDuration + task_start_delay)
 		}
 
 		event.Process(stats)
