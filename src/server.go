@@ -3,9 +3,9 @@ package main
 import (
 	"context"
 	"log"
-	"os"
 	"os/signal"
 	"sync"
+	"syscall"
 
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
@@ -71,7 +71,7 @@ func gracefulShutdown(ctx context.Context) {
 
 func server() {
 	Logger.Println("Starting server...")
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	initializeRedis()
