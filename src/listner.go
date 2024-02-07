@@ -100,8 +100,9 @@ func consumePubSubChannel() {
 			stats.callBack_timer = time.AfterFunc(Config.StaleTaskCallbackDelayDuration+task_start_delay, func() {
 				defer WaitGroup.Callback.Done()
 
-				if len(stats.Runtimes) > 0 {
-					// Terminal event received for this task
+				if len(stats.Runtimes) > 0 || stats.Name == "" {
+					// Terminal event received or
+					// No sent event received for this task
 					// Hence cannot be considered as a task drop case
 					TaskStatsMap.Delete(task_id)
 					return
