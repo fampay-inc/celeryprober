@@ -100,9 +100,17 @@ func consumePubSubChannel() {
 			stats.callBack_timer = time.AfterFunc(Config.StaleTaskCallbackDelayDuration+task_start_delay, func() {
 				defer WaitGroup.Callback.Done()
 
-				if len(stats.Runtimes) > 0 || stats.Name == "" {
+				var is_blacklisted_task bool
+				for _, task_name := range Config.BlacklistedTaskNames {
+					if task_name == stats.Name {
+						is_blacklisted_task = true
+					}
+				}
+
+				if len(stats.Runtimes) > 0 || stats.Name == "" || is_blacklisted_task {
 					// Terminal event received or
 					// No sent event received for this task
+					// or blacklisted task
 					// Hence cannot be considered as a task drop case
 					TaskStatsMap.Delete(task_id)
 					return

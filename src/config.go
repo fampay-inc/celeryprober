@@ -25,6 +25,7 @@ type Configuration struct {
 	TaskEventChannels                    []string        `env:"TASK_EVENT_CHANNELS" envDefault:"/6.celeryev/task.sent,/6.celeryev/task.received,/6.celeryev/task.started,/6.celeryev/task.succeeded,/6.celeryev/task.failed" envSeparator:","`
 	SlackAccessToken                     string          `env:"SLACK_ACCESS_TOKEN" envDefault:""`
 	SlackChannelId                       string          `env:"SLACK_CHANNEL_ID" envDefault:""`
+	BlacklistedTaskNames                 []string        `env:"BLACKLISTED_TASK_NAMES" envSeparator:","`
 
 	StaleTaskCallbackContextTimeout time.Duration
 	StaleTaskCallbackDelayDuration  time.Duration
