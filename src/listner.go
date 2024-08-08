@@ -86,6 +86,12 @@ func consumePubSubChannel() {
 				continue
 			}
 
+			// Emitting task_sent counter metric
+			NewCounterVec(prometheus.CounterOpts{
+				Name: "celery_task_sent_total",
+				Help: "total number of celery task_sent events",
+			}, []string{"name"}).WithLabelValues(task_sent_event.Name).Inc()
+
 			task_start_delay, err = task_sent_event.GetTaskStartDelayDuration()
 			if err != nil {
 				Logger.Printf("Unable to parse eta time due to error: %s", err)
