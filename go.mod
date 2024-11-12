@@ -1,4 +1,4 @@
-module github.com/fampay-inc/celery-monitor
+module git.famapp.in/fampay-inc/celery-monitor
 
 go 1.21.5
 
