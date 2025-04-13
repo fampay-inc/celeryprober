@@ -35,7 +35,7 @@ type Probe struct {
 
 	// Metrics for this probe
 	Metrics *Metrics
-	
+
 	// Health status
 	IsHealthy bool
 }
@@ -67,8 +67,8 @@ func NewProbeManager(config *GlobalConfig) *ProbeManager {
 // NewProbe creates a new probe from configuration
 func NewProbe(config *ProbeConfig) *Probe {
 	probe := &Probe{
-		Config:         config,
-		TaskStatsMap:   make(taskStatsMap),
+		Config:           config,
+		TaskStatsMap:     make(taskStatsMap),
 		StaleTaskChannel: make(chan *StaleTask),
 	}
 
@@ -99,7 +99,7 @@ func (pm *ProbeManager) Shutdown(ctx context.Context) {
 func (p *Probe) Start(ctx context.Context) {
 	p.initializeRedis()
 	p.initializePubSub(ctx)
-	
+
 	// Only initialize listeners if Redis connection is healthy
 	if p.IsHealthy {
 		p.initializeListeners()
@@ -181,23 +181,23 @@ func (p *Probe) consumeStaleTaskChannel() {
 
 		// Log stale task detection with structured data
 		LogEvent(p.Config.Name).
-			Str("event", "stale_task_detected").  
-			Str("task_id", taskID).  
-			Str("task_name", stale_task.Stats.Name).   
-			Str("last_event", string(stale_task.Stats.GetLatestEvent())).  
-			Float64("timestamp", stale_task.Stats.LatestEventTimestamp).  
+			Str("event", "stale_task_detected").
+			Str("task_id", taskID).
+			Str("task_name", stale_task.Stats.Name).
+			Str("last_event", string(stale_task.Stats.GetLatestEvent())).
+			Float64("timestamp", stale_task.Stats.LatestEventTimestamp).
 			Msg("Task dropped")
 
 		// Store in Redis before sending notification
 		_, err := p.RedisClient.HSet(ctx, p.Config.StaleTaskSetKey, taskID, stats_json).Result()
 		if err != nil {
-			LogErrorEvent(p.Config.Name, err).  
-				Str("task_id", taskID).  
+			LogErrorEvent(p.Config.Name, err).
+				Str("task_id", taskID).
 				Msg("Failed to store stale task in Redis")
 		} else {
-			LogEvent(p.Config.Name).  
-				Str("action", "store_stale_task").  
-				Str("task_id", taskID).  
+			LogEvent(p.Config.Name).
+				Str("action", "store_stale_task").
+				Str("task_id", taskID).
 				Msg("Stored stale task in Redis")
 		}
 
@@ -215,14 +215,14 @@ func (p *Probe) consumeStaleTaskChannel() {
 		// Send notification to Slack
 		status_code, _, err := SendMessageToSlackChannel(slackMsg)
 		if err != nil {
-			LogErrorEvent(p.Config.Name, err).  
-				Str("task_id", taskID).  
+			LogErrorEvent(p.Config.Name, err).
+				Str("task_id", taskID).
 				Msg("Failed to send Slack notification")
 		} else {
-			LogEvent(p.Config.Name).  
-				Str("action", "slack_notification").  
-				Int("status_code", status_code).  
-				Str("task_id", taskID).  
+			LogEvent(p.Config.Name).
+				Str("action", "slack_notification").
+				Int("status_code", status_code).
+				Str("task_id", taskID).
 				Msg("Sent Slack notification")
 		}
 
@@ -277,21 +277,10 @@ func (p *Probe) consumePubSubChannel() {
 			continue
 		}
 
-		// Get task name if available based on event type
-		taskName := ""
-		if event.Type() == TaskEventTypeSent {
-			taskName = event.(*TaskSent).Name
-		} else if stats, ok := p.TaskStatsMap.Read(event.ID()); ok && stats.Name != "" {
-			taskName = stats.Name
-		}
-
-		// Log with consistent field ordering
-		// Always use the same order: probe, event_type, task_id, task_name, [other fields]
 		LogEvent(p.Config.Name).
 			Str("event_type", string(event.Type())).
 			Str("task_id", event.ID().String()).
-			Str("task_name", taskName).
-			Msg("Task event")
+			Msg("Processed event")
 
 		var task_start_delay time.Duration
 		if event.Type() == TaskEventTypeSent {
@@ -306,11 +295,7 @@ func (p *Probe) consumePubSubChannel() {
 
 			task_start_delay, err = task_sent_event.GetTaskStartDelayDuration()
 			if err != nil {
-				LogErrorEvent(p.Config.Name, err).
-					Str("task_id", task_sent_event.TaskId.String()).
-					Str("task_name", task_sent_event.Name).
-					Str("eta", task_sent_event.ETA).
-					Msg("Failed to parse ETA time")
+				Logger.Printf("Unable to parse eta time for probe %s due to error: %s", p.Config.Name, err)
 			}
 		}
 
@@ -339,12 +324,8 @@ func (p *Probe) consumePubSubChannel() {
 				}
 
 				stats_json, _ := json.Marshal(stats)
-				LogEvent(p.Config.Name).
-					Str("task_id", task_id.String()).
-					Str("task_name", stats.Name).
-					Str("last_event", string(stats.GetLatestEvent())).
-					Str("stats", string(stats_json)).
-					Msg("Task identified as stale")
+				Logger.Printf("Task identified as stale in probe %s, TaskId: %s, Stats: %s",
+					p.Config.Name, task_id, stats_json)
 
 				if stats.Name != "" {
 					p.Metrics.RecordTaskDrop(stats.Name, string(stats.GetLatestEvent()))
@@ -365,21 +346,67 @@ func (p *Probe) consumePubSubChannel() {
 			stats.callBack_timer.Reset(p.Config.StaleTaskCallbackDelayDuration + task_start_delay)
 		}
 
+		// Process the event (update TaskStats)
 		event.Process(stats)
+
+		// Record metrics based on the event type
+		if stats.Name != "" {
+			switch event.Type() {
+			case TaskEventTypeReceived:
+				p.Metrics.RecordTaskReceived(stats.Name)
+				// Calculate and record queue latency if we have sent timestamps
+				if len(stats.SentTimestamps) > 0 && len(stats.ReceivedTimestamps) > 0 {
+					latency := stats.ReceivedTimestamps[len(stats.ReceivedTimestamps)-1] - stats.SentTimestamps[0]
+					if latency > 0 {
+						p.Metrics.RecordTaskQueueLatency(stats.Name, latency)
+					}
+				}
+
+			case TaskEventTypeStarted:
+				p.Metrics.RecordTaskStarted(stats.Name)
+
+			case TaskEventTypeSucceeded:
+				// Get the runtime from the most recent success
+				if len(stats.Runtimes) > 0 {
+					runtime := stats.Runtimes[len(stats.Runtimes)-1]
+					p.Metrics.RecordTaskSucceeded(stats.Name, runtime)
+
+					// Calculate and record end-to-end duration
+					if len(stats.SentTimestamps) > 0 && len(stats.SucceededTimestamps) > 0 {
+						duration := stats.SucceededTimestamps[len(stats.SucceededTimestamps)-1] - stats.SentTimestamps[0]
+						if duration > 0 {
+							p.Metrics.RecordTaskEndToEnd(stats.Name, "succeeded", duration)
+						}
+					}
+				}
+
+			case TaskEventTypeFailed:
+				// Get the runtime from the most recent failure
+				if len(stats.Runtimes) > 0 {
+					runtime := stats.Runtimes[len(stats.Runtimes)-1]
+					p.Metrics.RecordTaskFailed(stats.Name, runtime)
+
+					// Calculate and record end-to-end duration
+					if len(stats.SentTimestamps) > 0 && len(stats.FailedTimestamps) > 0 {
+						duration := stats.FailedTimestamps[len(stats.FailedTimestamps)-1] - stats.SentTimestamps[0]
+						if duration > 0 {
+							p.Metrics.RecordTaskEndToEnd(stats.Name, "failed", duration)
+						}
+					}
+				}
+			}
+		}
+
+		// Check if task lifecycle is complete
 		if stats.IsTaskLifecycleComplete() {
 			if timer_stopped := stats.callBack_timer.Stop(); timer_stopped {
 				p.WaitGroup.Callback.Done()
 			}
 			p.TaskStatsMap.Delete(task_id)
-			LogEvent(p.Config.Name).
-				Str("task_id", task_id.String()).
-				Str("task_name", stats.Name).
-				Str("reason", "lifecycle_complete").
-				Msg("Task removed from memory")
+			Logger.Printf("Removed Task (ID: %s) from memory for probe %s since lifecycle completion reached",
+				task_id, p.Config.Name)
 		}
 	}
 
-	LogEvent(p.Config.Name).
-		Str("component", "pubsub").
-		Msg("Channel closed")
+	Logger.Printf("PubSub channel closed for probe: %s", p.Config.Name)
 }

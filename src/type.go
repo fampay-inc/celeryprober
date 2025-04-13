@@ -214,8 +214,8 @@ func (e *TaskSent) Process(stats *TaskStats) {
 		stats.LatestEventTimestamp = e.Timestamp
 	}
 	stats.EventsReceivedInSequence = true
-	
-	// We don't need to record metrics here as it's already done in the listener
+
+	// Removed metrics recording to follow Single Responsibility Principle
 }
 
 func (e *TaskSent) IsTerminal() bool {
@@ -270,19 +270,8 @@ func (e *TaskReceived) Process(stats *TaskStats) {
 	if len(stats.ReceivedTimestamps) > len(stats.SentTimestamps) {
 		stats.EventsReceivedInSequence = false
 	}
-	
-	// Record task received metric
-	if stats.Name != "" {
-		AppMetrics.RecordTaskReceived(stats.Name)
-		
-		// Calculate and record queue latency if we have sent timestamps
-		if len(stats.SentTimestamps) > 0 {
-			latency := e.Timestamp - stats.SentTimestamps[0]
-			if latency > 0 {
-				AppMetrics.RecordTaskQueueLatency(stats.Name, latency)
-			}
-		}
-	}
+
+	// Removed metrics recording to follow Single Responsibility Principle
 }
 
 func (e *TaskReceived) IsTerminal() bool {
@@ -315,11 +304,8 @@ func (e *TaskStarted) Process(stats *TaskStats) {
 	if e.Timestamp > stats.LatestEventTimestamp {
 		stats.LatestEventTimestamp = e.Timestamp
 	}
-	
-	// Record task started metric
-	if stats.Name != "" {
-		AppMetrics.RecordTaskStarted(stats.Name)
-	}
+
+	// Removed metrics recording to follow Single Responsibility Principle
 }
 
 func (e *TaskStarted) IsTerminal() bool {
@@ -354,19 +340,8 @@ func (e *TaskSucceeded) Process(stats *TaskStats) {
 	if e.Timestamp > stats.LatestEventTimestamp {
 		stats.LatestEventTimestamp = e.Timestamp
 	}
-	
-	// Record task succeeded metrics
-	if stats.Name != "" {
-		AppMetrics.RecordTaskSucceeded(stats.Name, e.Runtime)
-		
-		// Calculate and record end-to-end duration if we have sent timestamps
-		if len(stats.SentTimestamps) > 0 {
-			duration := e.Timestamp - stats.SentTimestamps[0]
-			if duration > 0 {
-				AppMetrics.RecordTaskEndToEnd(stats.Name, "succeeded", duration)
-			}
-		}
-	}
+
+	// Removed metrics recording to follow Single Responsibility Principle
 }
 
 func (e *TaskSucceeded) IsTerminal() bool {
@@ -401,19 +376,8 @@ func (e *TaskFailed) Process(stats *TaskStats) {
 	if e.Timestamp > stats.LatestEventTimestamp {
 		stats.LatestEventTimestamp = e.Timestamp
 	}
-	
-	// Record task failed metrics
-	if stats.Name != "" {
-		AppMetrics.RecordTaskFailed(stats.Name, e.Runtime)
-		
-		// Calculate and record end-to-end duration if we have sent timestamps
-		if len(stats.SentTimestamps) > 0 {
-			duration := e.Timestamp - stats.SentTimestamps[0]
-			if duration > 0 {
-				AppMetrics.RecordTaskEndToEnd(stats.Name, "failed", duration)
-			}
-		}
-	}
+
+	// Removed metrics recording to follow Single Responsibility Principle
 }
 
 func (e *TaskFailed) IsTerminal() bool {
