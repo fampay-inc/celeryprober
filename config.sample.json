@@ -7,7 +7,7 @@
       "celery_redis_broker_url": "redis://localhost:6379/0",
       "stale_task_set_key": "payment_stale_tasks",
       "stale_task_callback_context_timeout_sec": 5,
-      "stale_task_callback_delay_duration_min": 15,
+      "stale_task_callback_delay_duration_min": 1,
       "blacklisted_task_names": ["periodic_task", "cleanup_task"]
     },
     {
@@ -17,7 +17,7 @@
       "celery_redis_broker_url": "redis://localhost:6379/1",
       "stale_task_set_key": "order_stale_tasks",
       "stale_task_callback_context_timeout_sec": 5,
-      "stale_task_callback_delay_duration_min": 15,
+      "stale_task_callback_delay_duration_min": 1,
       "blacklisted_task_names": []
     },
     {
@@ -27,7 +27,7 @@
       "celery_redis_broker_url": "redis://localhost:6379/2",
       "stale_task_set_key": "notification_stale_tasks",
       "stale_task_callback_context_timeout_sec": 5,
-      "stale_task_callback_delay_duration_min": 10,
+      "stale_task_callback_delay_duration_min": 1,
       "blacklisted_task_names": ["periodic_notification"]
     }
   ]

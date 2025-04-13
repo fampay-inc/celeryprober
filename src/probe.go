@@ -270,7 +270,7 @@ func (p *Probe) consumePubSubChannel() {
 			continue
 		}
 
-		LogEvent(p.Config.Name).
+		Log.Debug().Str("probe", p.Config.Name).
 			Str("event_type", string(event.Type())).
 			Str("task_id", event.ID().String()).
 			Msg("Processed event")
@@ -398,10 +398,14 @@ func (p *Probe) consumePubSubChannel() {
 				p.WaitGroup.Callback.Done()
 			}
 			p.TaskStatsMap.Delete(task_id)
-			Logger.Printf("Removed Task (ID: %s) from memory for probe %s since lifecycle completion reached",
-				task_id, p.Config.Name)
+			Log.Debug().
+				Str("probe", p.Config.Name).
+				Str("task_id", task_id.String()).
+				Msg("Task removed from memory after lifecycle completion")
 		}
 	}
 
-	Logger.Printf("PubSub channel closed for probe: %s", p.Config.Name)
+	Log.Debug().
+		Str("probe", p.Config.Name).
+		Msg("PubSub channel closed")
 }

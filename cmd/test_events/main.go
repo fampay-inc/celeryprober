@@ -70,8 +70,6 @@ func (g *EventGenerator) GenerateTaskEvents(ctx context.Context, shouldFail bool
 	}
 	time.Sleep(500 * time.Millisecond)
 
-
-
 	// Check if we should stop at a specific stage to simulate an incomplete task
 	if incompleteStage == "sent" {
 		return taskID, nil

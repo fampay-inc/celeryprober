@@ -1,7 +1,6 @@
 package main
 
 import (
-	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -142,13 +141,6 @@ func (stats *TaskStats) GetLatestEvent() TaskEventType {
 
 	// If none of the above, it must be a sent event
 	return TaskEventTypeSent
-}
-
-// waitGroup holds WaitGroups for different goroutines in the application
-type waitGroup struct {
-	PubSubChannelConsumer    sync.WaitGroup
-	StaleTaskChannelConsumer sync.WaitGroup
-	Callback                 sync.WaitGroup
 }
 
 // taskStatsMap provides a map of task IDs to their stats
