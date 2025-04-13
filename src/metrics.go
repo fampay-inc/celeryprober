@@ -262,6 +262,34 @@ func registerProbeMetrics() {
 					},
 					func() float64 { return 1 },
 				))
+
+				// Register all task metrics from the probe with the global registry
+				// We need to directly register each metric collector
+				
+				// Task event counters
+				globalRegistry.MustRegister(probe.Metrics.taskSentTotal)
+				globalRegistry.MustRegister(probe.Metrics.taskReceivedTotal)
+				globalRegistry.MustRegister(probe.Metrics.taskStartedTotal)
+				globalRegistry.MustRegister(probe.Metrics.taskSucceededTotal)
+				globalRegistry.MustRegister(probe.Metrics.taskFailedTotal)
+				globalRegistry.MustRegister(probe.Metrics.taskDropTotal)
+				
+				// Task timing metrics
+				globalRegistry.MustRegister(probe.Metrics.taskProcessingTime)
+				globalRegistry.MustRegister(probe.Metrics.taskQueueLatency)
+				globalRegistry.MustRegister(probe.Metrics.taskEndToEndDuration)
+				
+				// System metrics
+				globalRegistry.MustRegister(probe.Metrics.taskInProgress)
+				
+				// Gather metrics to report count
+				metrics, err := probe.Metrics.registry.Gather()
+				if err != nil {
+					Log.Error().Err(err).Str("probe", name).Msg("Failed to gather metrics from probe")
+					continue
+				}
+
+				Log.Info().Str("probe", name).Int("metric_families", len(metrics)).Msg("Registered metrics from probe")
 			}
 		}
 	}

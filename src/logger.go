@@ -97,8 +97,10 @@ func (w StdLogAdapter) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-// LogEvent creates a structured log event with standardized fields
+// LogEvent creates a structured log event with standardized fields and consistent ordering
 func LogEvent(probeName string) *zerolog.Event {
+	// Always use the same field ordering across all log messages
+	// This makes logs easier to read and parse
 	return Log.Info().Str("probe", probeName)
 }
 
