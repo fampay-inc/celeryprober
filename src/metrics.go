@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -228,22 +229,30 @@ func (m *Metrics) RecordTaskEndToEnd(taskName, status string, duration float64) 
 	m.taskEndToEndDuration.WithLabelValues(taskName, status).Observe(duration)
 }
 
-// RunMetricsServer runs the metrics server with a registry that collects metrics from all probes.
-func RunMetricsServer() {
-	// Create a new registry that will collect metrics from all probes
-	globalRegistry := prometheus.NewRegistry()
+var (
+	// globalRegistry is the shared metric registry for the application
+	globalRegistry *prometheus.Registry
+)
 
-	// Register the Go collector (collects runtime metrics about the Go process)
-	globalRegistry.MustRegister(prometheus.NewGoCollector())
-	// Register process collector (collects metrics about the process)
+func init() {
+	// Initialize the global registry once during package initialization
+	globalRegistry = prometheus.NewRegistry()
+
+	// Register standard collectors
 	globalRegistry.MustRegister(prometheus.NewProcessCollector(prometheus.ProcessCollectorOpts{}))
+	globalRegistry.MustRegister(prometheus.NewGoCollector())
+}
 
+// registerProbeMetrics adds probe-specific metrics to the global registry
+func registerProbeMetrics() {
 	// If we have a probe manager with active probes, gather their metrics
 	if pm := NewProbeManager(Config); len(pm.Probes) > 0 {
 		// For each probe, register its metrics with the global registry
 		for name, probe := range pm.Probes {
 			if probe.Config.Enabled && probe.Metrics != nil && probe.Metrics.registry != nil {
-				Logger.Printf("Adding metrics from probe %s to global registry", name)
+				Log.Info().Str("probe", name).Msg("Adding metrics from probe to global registry")
+				
+				// Add probe info metric
 				globalRegistry.MustRegister(prometheus.NewGaugeFunc(
 					prometheus.GaugeOpts{
 						Namespace: "celery_monitor",
@@ -260,25 +269,31 @@ func RunMetricsServer() {
 			}
 		}
 	}
+}
+
+// RunMetricsServer runs the metrics server with a registry that collects metrics from all probes
+func RunMetricsServer() {
+	// Register probe-specific metrics
+	registerProbeMetrics()
 
 	// Create a new HTTP handler for metrics
 	handler := promhttp.HandlerFor(globalRegistry, promhttp.HandlerOpts{
 		EnableOpenMetrics: true,
 	})
 
-	// Set up metrics server endpoint
+	// Set up metrics server endpoint with reasonable timeouts
 	server := &http.Server{
-		Addr:    ":" + strconv.Itoa(int(Config.MetricServerPort)),
-		Handler: handler,
+		Addr:         ":" + strconv.Itoa(int(Config.MetricServerPort)),
+		Handler:      handler,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  30 * time.Second,
 	}
 
 	go func() {
-		Logger.Printf("Starting metric server at :%d", Config.MetricServerPort)
-		// If error, log error and restart metrics server
-		if err := server.ListenAndServe(); err != nil {
-			// TODO: Integrate Sentry
-			// sentry.CaptureException(err)
-			Logger.Fatal(err)
+		Log.Info().Int("port", int(Config.MetricServerPort)).Msg("Starting metric server")
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			Log.Fatal().Err(err).Msg("Failed to start metrics server")
 		}
 	}()
 }

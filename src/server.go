@@ -53,9 +53,8 @@ func server() {
 	
 	Log.Info().Int("total_probes", len(pm.Probes)).Int("healthy_probes", healthyProbeCount).Msg("Probe initialization complete")
 
-	// Start REST and metrics servers
+	// Start REST server with integrated metrics endpoint
 	RunRESTServer()
-	RunMetricsServer()
 
 	// Wait for shutdown signal
 	gracefulShutdown(ctx, pm)

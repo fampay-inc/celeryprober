@@ -8,6 +8,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"strings"
+	"time"
 )
 
 func GenerateEventObject(channel_name string) TaskEvent {
@@ -60,12 +61,15 @@ func SendFileToSlackChannel(message, file_name string, file_content []byte) (sta
 	}
 
 	request.Header.Set("Content-Type", writer.FormDataContentType())
-	client := http.Client{}
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
 	response, err := client.Do(request)
 	if err != nil {
 		Logger.Println("Error sending request:", err)
 		return
 	}
+	defer response.Body.Close()
 
 	body, err = io.ReadAll(response.Body)
 	if err != nil {
@@ -90,7 +94,7 @@ func SendMessageToSlackChannel(message string) (status_code int, body []byte, er
 	}
 	payload_json, _ := json.Marshal(payload)
 
-	request, err := http.NewRequest("POST", url, strings.NewReader(string(payload_json)))
+	request, err := http.NewRequest("POST", url, bytes.NewBuffer(payload_json))
 	if err != nil {
 		Logger.Println("Error creating request:", err)
 		return
@@ -98,12 +102,15 @@ func SendMessageToSlackChannel(message string) (status_code int, body []byte, er
 
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Authorization", fmt.Sprintf("Bearer %s", Config.SlackAccessToken))
-	client := http.Client{}
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
 	response, err := client.Do(request)
 	if err != nil {
 		Logger.Println("Error sending request:", err)
 		return
 	}
+	defer response.Body.Close()
 
 	body, err = io.ReadAll(response.Body)
 	if err != nil {
