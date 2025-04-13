@@ -291,7 +291,7 @@ func (p *Probe) consumePubSubChannel() {
 			Str("event_type", string(event.Type())).
 			Str("task_id", event.ID().String()).
 			Str("task_name", taskName).
-			Msg("Task event processed")
+			Msg("Task event")
 
 		var task_start_delay time.Duration
 		if event.Type() == TaskEventTypeSent {

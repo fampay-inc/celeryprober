@@ -4,13 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/url"
+	"log"
 	"os"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/caarlos0/env/v10"
+	
+	"git.famapp.in/fampay-inc/celery-monitor/src/utils"
 )
 
 type ApplicationMode string
@@ -76,7 +76,7 @@ func (pc *ProbeConfig) Initialize() {
 	pc.StaleTaskCallbackDelayDuration = time.Duration(pc.StaleTaskCallbackDelayDurationInMin) * time.Minute
 
 	// Generate TaskEventChannels from the CeleryRedisBrokerURL
-	pc.TaskEventChannels = generateTaskEventChannels(pc.CeleryRedisBrokerURL)
+	pc.TaskEventChannels = utils.GenerateTaskEventChannels(pc.CeleryRedisBrokerURL)
 	// We can't reliably log here because Logger might not be initialized yet
 }
 
@@ -85,13 +85,13 @@ func NewConfig() *GlobalConfig {
 	// First load environment variables
 	config := &GlobalConfig{}
 	if err := env.Parse(config); err != nil {
-		Logger.Fatal("Unable to parse configuration from environment variables")
+		log.Fatal("Unable to parse configuration from environment variables")
 	}
 
 	// If config file is specified, load probe configurations from it
 	if config.ConfigFile != "" {
 		if err := loadConfigFile(config); err != nil {
-			Logger.Fatalf("Error loading config file: %v", err)
+			log.Fatalf("Error loading config file: %v", err)
 		}
 	} else {
 		// No config file, create a single default probe from environment variables
@@ -162,7 +162,7 @@ func loadProbeFromEnv() *ProbeConfig {
 
 	ep := envProbe{}
 	if err := env.Parse(&ep); err != nil {
-		Logger.Fatal("Unable to parse probe configuration from environment variables")
+		log.Fatal("Unable to parse probe configuration from environment variables")
 	}
 
 	// Transfer values to the probe
@@ -185,68 +185,4 @@ func loadProbeFromEnv() *ProbeConfig {
 	// TaskEventChannels are now generated in Initialize() based on the Redis URL
 
 	return probe
-}
-
-// generateTaskEventChannels extracts the database number from the Redis URL
-// and generates the standard Celery event channel names
-func generateTaskEventChannels(redisURL string) []string {
-	// Parse the Redis URL to extract the database number
-	dbNumber := extractDBNumberFromRedisURL(redisURL)
-
-	// Standard Celery event types
-	eventTypes := []string{
-		"task.sent",
-		"task.received",
-		"task.started",
-		"task.succeeded",
-		"task.failed",
-	}
-
-	// Generate the channel names with the extracted DB number
-	channels := make([]string, len(eventTypes))
-	for i, eventType := range eventTypes {
-		channels[i] = fmt.Sprintf("/%s.celeryev/%s", dbNumber, eventType)
-	}
-
-	return channels
-}
-
-// extractDBNumberFromRedisURL extracts the database number from a Redis URL
-// Redis URLs have the format: redis://host:port/dbNumber
-// If no database is specified, it defaults to 0
-func extractDBNumberFromRedisURL(redisURL string) string {
-	// Default database number
-	defaultDB := "0"
-
-	// If URL is empty, return default
-	if redisURL == "" {
-		return defaultDB
-	}
-
-	// Parse the URL
-	parsedURL, err := url.Parse(redisURL)
-	if err != nil {
-		// Can't use Log here due to initialization order
-		fmt.Printf("Failed to parse Redis URL: %s - %v\n", redisURL, err)
-		return defaultDB
-	}
-
-	// Extract the path which contains the DB number
-	path := parsedURL.Path
-	if path == "" || path == "/" {
-		return defaultDB
-	}
-
-	// Remove leading slash if present
-	dbStr := strings.TrimPrefix(path, "/")
-
-	// Validate that it's a number
-	_, err = strconv.Atoi(dbStr)
-	if err != nil {
-		// Can't use Log here due to initialization order
-		fmt.Printf("Invalid database number in Redis URL: %s\n", dbStr)
-		return defaultDB
-	}
-
-	return dbStr
 }

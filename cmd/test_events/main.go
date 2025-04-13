@@ -46,7 +46,7 @@ func NewEventGenerator(redisURL, dbNumber, taskName, queue string) (*EventGenera
 }
 
 // GenerateTaskEvents generates a complete set of task events
-func (g *EventGenerator) GenerateTaskEvents(ctx context.Context, shouldFail bool) (string, error) {
+func (g *EventGenerator) GenerateTaskEvents(ctx context.Context, shouldFail bool, incompleteStage string) (string, error) {
 	// Generate a unique task ID
 	taskID := uuid.New().String()
 	fmt.Printf("Generated task ID: %s\n", taskID)
@@ -70,6 +70,13 @@ func (g *EventGenerator) GenerateTaskEvents(ctx context.Context, shouldFail bool
 	}
 	time.Sleep(500 * time.Millisecond)
 
+
+
+	// Check if we should stop at a specific stage to simulate an incomplete task
+	if incompleteStage == "sent" {
+		return taskID, nil
+	}
+
 	// 2. Task Received Event
 	err = g.publishEvent(ctx, channelPrefix+"task.received", taskID, g.TaskName, args, clock+1, "task-received", g.Queue)
 	if err != nil {
@@ -77,12 +84,22 @@ func (g *EventGenerator) GenerateTaskEvents(ctx context.Context, shouldFail bool
 	}
 	time.Sleep(500 * time.Millisecond)
 
+	// Check if we should stop at received stage
+	if incompleteStage == "received" {
+		return taskID, nil
+	}
+
 	// 3. Task Started Event
 	err = g.publishEvent(ctx, channelPrefix+"task.started", taskID, g.TaskName, args, clock+2, "task-started", g.Queue)
 	if err != nil {
 		return "", fmt.Errorf("failed to publish task.started event: %w", err)
 	}
 	time.Sleep(1000 * time.Millisecond)
+
+	// Check if we should stop at started stage
+	if incompleteStage == "started" {
+		return taskID, nil
+	}
 
 	// 4. Task Succeeded/Failed Event
 	if shouldFail {
@@ -341,6 +358,7 @@ func main() {
 	queue := flag.String("queue", "default", "Queue name")
 	count := flag.Int("count", 1, "Number of task lifecycles to generate")
 	fail := flag.Bool("fail", false, "Generate failed tasks")
+	incompleteStage := flag.String("incomplete", "", "Generate incomplete task lifecycle (stop at 'sent', 'received', or 'started')")
 	help := flag.Bool("help", false, "Show help")
 
 	flag.Parse()
@@ -357,6 +375,8 @@ func main() {
 		fmt.Println("  go run cmd/test_events/main.go --redis-url redis://localhost:6379/1 --db 1 --task order_process --queue order --count 5 --fail")
 		fmt.Println("\n  # Generate events for notification service (DB 2)")
 		fmt.Println("  go run cmd/test_events/main.go --redis-url redis://localhost:6379/2 --db 2 --task notification_send --queue notification")
+		fmt.Println("\n  # Generate incomplete task to test stale task detection (stop at 'sent')")
+		fmt.Println("  go run cmd/test_events/main.go --redis-url redis://localhost:6379/0 --task stale_task --incomplete sent")
 		os.Exit(0)
 	}
 
@@ -376,11 +396,16 @@ func main() {
 	// Create context
 	ctx := context.Background()
 
-	fmt.Printf("Generating %d %s task events...\n", *count, map[bool]string{true: "failed", false: "successful"}[*fail])
+	// Prepare descriptive message about what we're generating
+	taskType := map[bool]string{true: "failed", false: "successful"}[*fail]
+	if *incompleteStage != "" {
+		taskType = "incomplete (" + *incompleteStage + ")"
+	}
+	fmt.Printf("Generating %d %s task events...\n", *count, taskType)
 
 	// Generate events
 	for i := 0; i < *count; i++ {
-		taskID, err := generator.GenerateTaskEvents(ctx, *fail)
+		taskID, err := generator.GenerateTaskEvents(ctx, *fail, *incompleteStage)
 		if err != nil {
 			log.Fatalf("Failed to generate task events: %v", err)
 		}
