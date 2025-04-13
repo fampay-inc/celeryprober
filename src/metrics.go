@@ -1,14 +1,10 @@
 package main
 
 import (
-	"net/http"
-	"strconv"
 	"sync"
-	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // Metrics contains all the Prometheus metrics for the application
@@ -28,7 +24,7 @@ type Metrics struct {
 
 	// System metrics
 	taskInProgress *prometheus.GaugeVec
-	
+
 	// Registry for all metrics
 	registry *prometheus.Registry
 }
@@ -43,144 +39,144 @@ var (
 // InitMetrics initializes all metrics with proper naming conventions
 func InitMetrics(serviceName string) *Metrics {
 	var m *Metrics
-	
+
 	metricsOnce.Do(func() {
 		registry := prometheus.NewRegistry()
-		
+
 		// Register the Go collector (collects runtime metrics about the Go process)
 		registry.MustRegister(prometheus.NewGoCollector())
 		// Register process collector (collects metrics about the process)
 		registry.MustRegister(prometheus.NewProcessCollector(prometheus.ProcessCollectorOpts{}))
-		
+
 		// Create a metrics factory that automatically registers metrics with our registry
 		factory := promauto.With(registry)
-		
+
 		// Common labels for all metrics
 		commonLabels := prometheus.Labels{"service": serviceName}
-		
+
 		m = &Metrics{
 			registry: registry,
-			
+
 			// Task event counters
 			taskSentTotal: factory.NewCounterVec(
 				prometheus.CounterOpts{
-					Namespace: "celery",
-					Subsystem: "tasks",
-					Name:      "sent_total",
-					Help:      "Total number of celery tasks sent",
+					Namespace:   "celery",
+					Subsystem:   "tasks",
+					Name:        "sent_total",
+					Help:        "Total number of celery tasks sent",
 					ConstLabels: commonLabels,
 				},
 				[]string{"task_name", "queue"},
 			),
-			
+
 			taskReceivedTotal: factory.NewCounterVec(
 				prometheus.CounterOpts{
-					Namespace: "celery",
-					Subsystem: "tasks",
-					Name:      "received_total",
-					Help:      "Total number of celery tasks received",
+					Namespace:   "celery",
+					Subsystem:   "tasks",
+					Name:        "received_total",
+					Help:        "Total number of celery tasks received",
 					ConstLabels: commonLabels,
 				},
 				[]string{"task_name"},
 			),
-			
+
 			taskStartedTotal: factory.NewCounterVec(
 				prometheus.CounterOpts{
-					Namespace: "celery",
-					Subsystem: "tasks",
-					Name:      "started_total",
-					Help:      "Total number of celery tasks started",
+					Namespace:   "celery",
+					Subsystem:   "tasks",
+					Name:        "started_total",
+					Help:        "Total number of celery tasks started",
 					ConstLabels: commonLabels,
 				},
 				[]string{"task_name"},
 			),
-			
+
 			taskSucceededTotal: factory.NewCounterVec(
 				prometheus.CounterOpts{
-					Namespace: "celery",
-					Subsystem: "tasks",
-					Name:      "succeeded_total",
-					Help:      "Total number of celery tasks succeeded",
+					Namespace:   "celery",
+					Subsystem:   "tasks",
+					Name:        "succeeded_total",
+					Help:        "Total number of celery tasks succeeded",
 					ConstLabels: commonLabels,
 				},
 				[]string{"task_name"},
 			),
-			
+
 			taskFailedTotal: factory.NewCounterVec(
 				prometheus.CounterOpts{
-					Namespace: "celery",
-					Subsystem: "tasks",
-					Name:      "failed_total",
-					Help:      "Total number of celery tasks failed",
+					Namespace:   "celery",
+					Subsystem:   "tasks",
+					Name:        "failed_total",
+					Help:        "Total number of celery tasks failed",
 					ConstLabels: commonLabels,
 				},
 				[]string{"task_name"},
 			),
-			
+
 			taskDropTotal: factory.NewCounterVec(
 				prometheus.CounterOpts{
-					Namespace: "celery",
-					Subsystem: "tasks",
-					Name:      "drop_total",
-					Help:      "Total number of celery tasks dropped",
+					Namespace:   "celery",
+					Subsystem:   "tasks",
+					Name:        "drop_total",
+					Help:        "Total number of celery tasks dropped",
 					ConstLabels: commonLabels,
 				},
 				[]string{"task_name", "last_event"},
 			),
-			
+
 			// Timing metrics
 			taskProcessingTime: factory.NewHistogramVec(
 				prometheus.HistogramOpts{
-					Namespace: "celery",
-					Subsystem: "tasks",
-					Name:      "processing_seconds",
-					Help:      "Time taken to process tasks",
+					Namespace:   "celery",
+					Subsystem:   "tasks",
+					Name:        "processing_seconds",
+					Help:        "Time taken to process tasks",
 					ConstLabels: commonLabels,
-					Buckets:   prometheus.DefBuckets,
+					Buckets:     prometheus.DefBuckets,
 				},
 				[]string{"task_name"},
 			),
-			
+
 			taskQueueLatency: factory.NewHistogramVec(
 				prometheus.HistogramOpts{
-					Namespace: "celery",
-					Subsystem: "tasks",
-					Name:      "queue_latency_seconds",
-					Help:      "Time spent in queue before processing",
+					Namespace:   "celery",
+					Subsystem:   "tasks",
+					Name:        "queue_latency_seconds",
+					Help:        "Time spent in queue before processing",
 					ConstLabels: commonLabels,
-					Buckets:   prometheus.DefBuckets,
+					Buckets:     prometheus.DefBuckets,
 				},
 				[]string{"task_name"},
 			),
-			
+
 			taskEndToEndDuration: factory.NewHistogramVec(
 				prometheus.HistogramOpts{
-					Namespace: "celery",
-					Subsystem: "tasks",
-					Name:      "end_to_end_seconds",
-					Help:      "Total time from task sent to completion",
+					Namespace:   "celery",
+					Subsystem:   "tasks",
+					Name:        "end_to_end_seconds",
+					Help:        "Total time from task sent to completion",
 					ConstLabels: commonLabels,
-					Buckets:   prometheus.DefBuckets,
+					Buckets:     prometheus.DefBuckets,
 				},
 				[]string{"task_name", "status"},
 			),
-			
+
 			// System metrics
 			taskInProgress: factory.NewGaugeVec(
 				prometheus.GaugeOpts{
-					Namespace: "celery",
-					Subsystem: "tasks",
-					Name:      "in_progress",
-					Help:      "Number of tasks currently in progress",
+					Namespace:   "celery",
+					Subsystem:   "tasks",
+					Name:        "in_progress",
+					Help:        "Number of tasks currently in progress",
 					ConstLabels: commonLabels,
 				},
 				[]string{"task_name"},
 			),
 		}
-		
+
 		AppMetrics = m
 	})
-	
+
 	return AppMetrics
 }
 
@@ -251,7 +247,7 @@ func registerProbeMetrics() {
 		for name, probe := range pm.Probes {
 			if probe.Config.Enabled && probe.Metrics != nil && probe.Metrics.registry != nil {
 				Log.Info().Str("probe", name).Msg("Adding metrics from probe to global registry")
-				
+
 				// Add probe info metric
 				globalRegistry.MustRegister(prometheus.NewGaugeFunc(
 					prometheus.GaugeOpts{
@@ -269,31 +265,4 @@ func registerProbeMetrics() {
 			}
 		}
 	}
-}
-
-// RunMetricsServer runs the metrics server with a registry that collects metrics from all probes
-func RunMetricsServer() {
-	// Register probe-specific metrics
-	registerProbeMetrics()
-
-	// Create a new HTTP handler for metrics
-	handler := promhttp.HandlerFor(globalRegistry, promhttp.HandlerOpts{
-		EnableOpenMetrics: true,
-	})
-
-	// Set up metrics server endpoint with reasonable timeouts
-	server := &http.Server{
-		Addr:         ":" + strconv.Itoa(int(Config.MetricServerPort)),
-		Handler:      handler,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
-		IdleTimeout:  30 * time.Second,
-	}
-
-	go func() {
-		Log.Info().Int("port", int(Config.MetricServerPort)).Msg("Starting metric server")
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			Log.Fatal().Err(err).Msg("Failed to start metrics server")
-		}
-	}()
 }

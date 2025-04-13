@@ -23,7 +23,6 @@ const (
 // GlobalConfig contains application-wide settings
 type GlobalConfig struct {
 	RESTServerPort   int             `env:"REST_SERVER_PORT" envDefault:"3000" json:"rest_server_port"`
-	MetricServerPort int             `env:"METRIC_SERVER_PORT" envDefault:"2112" json:"metric_server_port"`
 	Mode             ApplicationMode `env:"APPLICATION_MODE" envDefault:"server" json:"mode"`
 	ConfigFile       string          `env:"CONFIG_FILE" json:"-"` // Path to JSON config file for probes
 	SlackAccessToken string          `env:"SLACK_ACCESS_TOKEN" envDefault:"" json:"slack_access_token"`
@@ -37,20 +36,20 @@ type GlobalConfig struct {
 type ProbeConfig struct {
 	// Probe identification
 	Name        string `json:"name" validate:"required"` // Name of the probe, used in metrics and logs
-	Enabled     bool   `json:"enabled"`                    // Whether this probe is enabled
-	Description string `json:"description,omitempty"`      // Optional description
+	Enabled     bool   `json:"enabled"`                  // Whether this probe is enabled
+	Description string `json:"description,omitempty"`    // Optional description
 
 	// Redis configuration
 	CeleryRedisBrokerURL string `json:"celery_redis_broker_url" validate:"required"` // Redis broker URL for Celery
-	StaleTaskSetKey     string `json:"stale_task_set_key" validate:"required"`       // Redis key for storing stale tasks
-	
+	StaleTaskSetKey      string `json:"stale_task_set_key" validate:"required"`      // Redis key for storing stale tasks
+
 	// Generated fields
 	TaskEventChannels []string `json:"-"` // Generated Celery event channels to subscribe to
 
 	// Task processing configuration
 	StaleTaskCallbackContextTimeoutInSec int      `json:"stale_task_callback_context_timeout_sec" validate:"required"` // Timeout for stale task callbacks
-	StaleTaskCallbackDelayDurationInMin  int      `json:"stale_task_callback_delay_duration_min" validate:"required"` // Delay before considering a task stale
-	BlacklistedTaskNames                 []string `json:"blacklisted_task_names,omitempty"`                           // Task names to ignore
+	StaleTaskCallbackDelayDurationInMin  int      `json:"stale_task_callback_delay_duration_min" validate:"required"`  // Delay before considering a task stale
+	BlacklistedTaskNames                 []string `json:"blacklisted_task_names,omitempty"`                            // Task names to ignore
 
 	// Computed fields (not from JSON)
 	StaleTaskCallbackContextTimeout time.Duration `json:"-"`
@@ -75,7 +74,7 @@ func DefaultProbeConfig() *ProbeConfig {
 func (pc *ProbeConfig) Initialize() {
 	pc.StaleTaskCallbackContextTimeout = time.Duration(pc.StaleTaskCallbackContextTimeoutInSec) * time.Second
 	pc.StaleTaskCallbackDelayDuration = time.Duration(pc.StaleTaskCallbackDelayDurationInMin) * time.Minute
-	
+
 	// Generate TaskEventChannels from the CeleryRedisBrokerURL
 	pc.TaskEventChannels = generateTaskEventChannels(pc.CeleryRedisBrokerURL)
 	// We can't reliably log here because Logger might not be initialized yet
@@ -128,7 +127,7 @@ func loadConfigFile(config *GlobalConfig) error {
 	type ProbesConfig struct {
 		Probes []*ProbeConfig `json:"probes"`
 	}
-	
+
 	tempConfig := &ProbesConfig{}
 	if err := json.Unmarshal(bytes, tempConfig); err != nil {
 		return fmt.Errorf("failed to parse config file: %w", err)
@@ -170,19 +169,19 @@ func loadProbeFromEnv() *ProbeConfig {
 	probe.Name = ep.ServiceName
 	probe.Enabled = true
 	probe.Description = fmt.Sprintf("Probe for %s", ep.ServiceName)
-	
+
 	// Use the new CELERY_REDIS_BROKER_URL if provided, otherwise fall back to REDIS_URL
 	if ep.CeleryRedisBrokerURL != "" {
 		probe.CeleryRedisBrokerURL = ep.CeleryRedisBrokerURL
 	} else {
 		probe.CeleryRedisBrokerURL = ep.LegacyRedisURL
 	}
-	
+
 	probe.StaleTaskSetKey = ep.StaleTaskSetKey
 	probe.StaleTaskCallbackContextTimeoutInSec = ep.StaleTaskCallbackContextTimeoutInSec
 	probe.StaleTaskCallbackDelayDurationInMin = ep.StaleTaskCallbackDelayDurationInMin
 	probe.BlacklistedTaskNames = ep.BlacklistedTaskNames
-	
+
 	// TaskEventChannels are now generated in Initialize() based on the Redis URL
 
 	return probe
@@ -193,7 +192,7 @@ func loadProbeFromEnv() *ProbeConfig {
 func generateTaskEventChannels(redisURL string) []string {
 	// Parse the Redis URL to extract the database number
 	dbNumber := extractDBNumberFromRedisURL(redisURL)
-	
+
 	// Standard Celery event types
 	eventTypes := []string{
 		"task.sent",
@@ -202,13 +201,13 @@ func generateTaskEventChannels(redisURL string) []string {
 		"task.succeeded",
 		"task.failed",
 	}
-	
+
 	// Generate the channel names with the extracted DB number
 	channels := make([]string, len(eventTypes))
 	for i, eventType := range eventTypes {
 		channels[i] = fmt.Sprintf("/%s.celeryev/%s", dbNumber, eventType)
 	}
-	
+
 	return channels
 }
 
@@ -218,36 +217,36 @@ func generateTaskEventChannels(redisURL string) []string {
 func extractDBNumberFromRedisURL(redisURL string) string {
 	// Default database number
 	defaultDB := "0"
-	
+
 	// If URL is empty, return default
 	if redisURL == "" {
 		return defaultDB
 	}
-	
+
 	// Parse the URL
 	parsedURL, err := url.Parse(redisURL)
 	if err != nil {
 		// Can't use Log here due to initialization order
-fmt.Printf("Failed to parse Redis URL: %s - %v\n", redisURL, err)
-return defaultDB
-}
+		fmt.Printf("Failed to parse Redis URL: %s - %v\n", redisURL, err)
+		return defaultDB
+	}
 
-// Extract the path which contains the DB number
-path := parsedURL.Path
-if path == "" || path == "/" {
-return defaultDB
-}
+	// Extract the path which contains the DB number
+	path := parsedURL.Path
+	if path == "" || path == "/" {
+		return defaultDB
+	}
 
-// Remove leading slash if present
-dbStr := strings.TrimPrefix(path, "/")
+	// Remove leading slash if present
+	dbStr := strings.TrimPrefix(path, "/")
 
-// Validate that it's a number
+	// Validate that it's a number
 	_, err = strconv.Atoi(dbStr)
 	if err != nil {
 		// Can't use Log here due to initialization order
-fmt.Printf("Invalid database number in Redis URL: %s\n", dbStr)
-return defaultDB
-}
+		fmt.Printf("Invalid database number in Redis URL: %s\n", dbStr)
+		return defaultDB
+	}
 
-return dbStr
+	return dbStr
 }
