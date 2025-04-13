@@ -132,25 +132,22 @@ type waitGroup struct {
 type taskStatsMap map[uuid.UUID]*TaskStats
 
 func (m taskStatsMap) Read(key uuid.UUID) (value *TaskStats, ok bool) {
-	TaskStatsMapMutex.RLock()
-	defer TaskStatsMapMutex.RUnlock()
-
-	value, ok = TaskStatsMap[key]
+	// The mutex is now part of the Probe struct
+	// and is handled by the caller
+	value, ok = m[key]
 	return
 }
 
 func (m taskStatsMap) Write(key uuid.UUID, value *TaskStats) {
-	TaskStatsMapMutex.Lock()
-	defer TaskStatsMapMutex.Unlock()
-
-	TaskStatsMap[key] = value
+	// The mutex is now part of the Probe struct
+	// and is handled by the caller
+	m[key] = value
 }
 
 func (m taskStatsMap) Delete(key uuid.UUID) {
-	TaskStatsMapMutex.Lock()
-	defer TaskStatsMapMutex.Unlock()
-
-	delete(TaskStatsMap, key)
+	// The mutex is now part of the Probe struct
+	// and is handled by the caller
+	delete(m, key)
 }
 
 type StaleTask struct {

@@ -30,4 +30,5 @@ require (
 	github.com/gofiber/fiber/v2 v2.52.0
 	github.com/prometheus/client_golang v1.18.0
 	github.com/redis/go-redis/v9 v9.4.0
+	github.com/rs/zerolog v1.34.0
 )

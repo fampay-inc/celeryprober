@@ -4,90 +4,59 @@ import (
 	"context"
 	"log"
 	"os/signal"
-	"sync"
 	"syscall"
-
-	"github.com/google/uuid"
-	"github.com/redis/go-redis/v9"
 )
 
 var (
-	Config            *Configuration
-	Logger            *log.Logger
-	WaitGroup         waitGroup
-	RedisClient       *redis.Client
-	PubSub            *redis.PubSub
-	TaskStatsMap      taskStatsMap
-	TaskStatsMapMutex sync.RWMutex
-	StaleTaskChannel  chan *StaleTask
+	Config *GlobalConfig
+	Logger *log.Logger
 )
 
-func initializePubSub(ctx context.Context) {
-	Logger.Println("Starting PubSub Subcriber...")
-
-	PubSub = RedisClient.Subscribe(ctx, Config.TaskEventChannels...)
-	if err := PubSub.Ping(ctx, "ping"); err != nil {
-		Logger.Fatalln("Cannot ping PubSub due to error:", err)
-	}
-
-	Logger.Println("Subscribed to channels:", Config.TaskEventChannels)
-}
-
-func initializeStore() {
-	TaskStatsMap = map[uuid.UUID]*TaskStats{}
-	TaskStatsMapMutex = sync.RWMutex{}
-	StaleTaskChannel = make(chan *StaleTask)
-}
-
-func initializeListners() {
-	WaitGroup.StaleTaskChannelConsumer.Add(1)
-	go consumeStaleTaskChannel()
-	WaitGroup.PubSubChannelConsumer.Add(1)
-	go consumePubSubChannel()
-}
+// These functions are now handled by the Probe struct
 
 func waitForInterrupt(ctx context.Context) {
 	<-ctx.Done()
 }
 
-func gracefulShutdown(ctx context.Context) {
+func gracefulShutdown(ctx context.Context, pm *ProbeManager) {
 	waitForInterrupt(ctx)
-	Logger.Println("Waiting for tasks to be finished...")
+	Log.Info().Msg("Shutting down all probes...")
 
-	PubSub.Close()
-	WaitGroup.PubSubChannelConsumer.Wait()
+	// Shutdown all probes
+	pm.Shutdown(ctx)
 
-	Logger.Println("Waiting for scheduled callbacks to be executed...")
-	WaitGroup.Callback.Wait()
-
-	Logger.Println("Waiting for stale tasks to be pushed to Redis...")
-	close(StaleTaskChannel)
-	WaitGroup.StaleTaskChannelConsumer.Wait()
-
-	RedisClient.Close()
-
-	Logger.Println("Service stopped gracefully")
+	Log.Info().Msg("Service stopped gracefully")
 }
 
-func initializeMetrics() {
-	// Initialize metrics with service name from config
-	InitMetrics(Config.ServiceName)
-	Logger.Printf("Initialized metrics with service name: %s", Config.ServiceName)
-}
+// Metrics initialization is now handled by each Probe
 
 func server() {
-	Logger.Println("Starting server...")
+	Log.Info().Msg("Starting server...")
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	initializeRedis()
-	initializePubSub(ctx)
-	initializeStore()
-	initializeMetrics()
-	initializeListners()
+	// Create probe manager
+	pm := NewProbeManager(Config)
 
+	// Start all probes and count healthy ones
+	var healthyProbeCount int
+	pm.Start(ctx)
+	
+	// Check which probes are healthy
+	for name, probe := range pm.Probes {
+		if probe.IsHealthy {
+			healthyProbeCount++
+		} else {
+			LogWarnEvent(name).Msg("Probe is not healthy - monitoring will be limited")
+		}
+	}
+	
+	Log.Info().Int("total_probes", len(pm.Probes)).Int("healthy_probes", healthyProbeCount).Msg("Probe initialization complete")
+
+	// Start REST and metrics servers
 	RunRESTServer()
 	RunMetricsServer()
 
-	gracefulShutdown(ctx)
+	// Wait for shutdown signal
+	gracefulShutdown(ctx, pm)
 }

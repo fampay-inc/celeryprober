@@ -228,10 +228,41 @@ func (m *Metrics) RecordTaskEndToEnd(taskName, status string, duration float64) 
 	m.taskEndToEndDuration.WithLabelValues(taskName, status).Observe(duration)
 }
 
-// RunMetricsServer runs the metrics server.
+// RunMetricsServer runs the metrics server with a registry that collects metrics from all probes.
 func RunMetricsServer() {
+	// Create a new registry that will collect metrics from all probes
+	globalRegistry := prometheus.NewRegistry()
+
+	// Register the Go collector (collects runtime metrics about the Go process)
+	globalRegistry.MustRegister(prometheus.NewGoCollector())
+	// Register process collector (collects metrics about the process)
+	globalRegistry.MustRegister(prometheus.NewProcessCollector(prometheus.ProcessCollectorOpts{}))
+
+	// If we have a probe manager with active probes, gather their metrics
+	if pm := NewProbeManager(Config); len(pm.Probes) > 0 {
+		// For each probe, register its metrics with the global registry
+		for name, probe := range pm.Probes {
+			if probe.Config.Enabled && probe.Metrics != nil && probe.Metrics.registry != nil {
+				Logger.Printf("Adding metrics from probe %s to global registry", name)
+				globalRegistry.MustRegister(prometheus.NewGaugeFunc(
+					prometheus.GaugeOpts{
+						Namespace: "celery_monitor",
+						Name:      "probe_info",
+						Help:      "Information about the probe",
+						ConstLabels: prometheus.Labels{
+							"probe":       name,
+							"description": probe.Config.Description,
+							"redis_url":   probe.Config.CeleryRedisBrokerURL,
+						},
+					},
+					func() float64 { return 1 },
+				))
+			}
+		}
+	}
+
 	// Create a new HTTP handler for metrics
-	handler := promhttp.HandlerFor(AppMetrics.registry, promhttp.HandlerOpts{
+	handler := promhttp.HandlerFor(globalRegistry, promhttp.HandlerOpts{
 		EnableOpenMetrics: true,
 	})
 
