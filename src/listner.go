@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"strings"
 	"time"
-
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 func consumeStaleTaskChannel() {
@@ -87,10 +85,7 @@ func consumePubSubChannel() {
 			}
 
 			// Emitting task_sent counter metric
-			NewCounterVec(prometheus.CounterOpts{
-				Name: "celery_task_sent_total",
-				Help: "total number of celery task_sent events",
-			}, []string{"name"}).WithLabelValues(task_sent_event.Name).Inc()
+			AppMetrics.RecordTaskSent(task_sent_event.Name, task_sent_event.Queue)
 
 			task_start_delay, err = task_sent_event.GetTaskStartDelayDuration()
 			if err != nil {
@@ -126,10 +121,7 @@ func consumePubSubChannel() {
 				Logger.Printf("Task identified as stale, TaskId: %s, Stats: %s", task_id, stats_json)
 
 				if stats.Name != "" {
-					NewCounterVec(prometheus.CounterOpts{
-						Name: "celery_task_drop_total",
-						Help: "total number of celery task drops",
-					}, []string{"task_name", "last_event"}).WithLabelValues(stats.Name, string(stats.GetLatestEvent())).Inc()
+					AppMetrics.RecordTaskDrop(stats.Name, string(stats.GetLatestEvent()))
 				}
 
 				StaleTaskChannel <- &StaleTask{

@@ -69,6 +69,12 @@ func gracefulShutdown(ctx context.Context) {
 	Logger.Println("Service stopped gracefully")
 }
 
+func initializeMetrics() {
+	// Initialize metrics with service name from config
+	InitMetrics(Config.ServiceName)
+	Logger.Printf("Initialized metrics with service name: %s", Config.ServiceName)
+}
+
 func server() {
 	Logger.Println("Starting server...")
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -77,6 +83,7 @@ func server() {
 	initializeRedis()
 	initializePubSub(ctx)
 	initializeStore()
+	initializeMetrics()
 	initializeListners()
 
 	RunRESTServer()

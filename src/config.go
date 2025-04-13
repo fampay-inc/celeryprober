@@ -14,7 +14,7 @@ const (
 )
 
 type Configuration struct {
-	ServiceName                          string
+	ServiceName                          string          `env:"SERVICE_NAME" envDefault:"celery-monitor"`
 	RESTServerPort                       int             `env:"REST_SERVER_PORT" envDefault:"3000"`
 	MetricServerPort                     int             `env:"METRIC_SERVER_PORT" envDefault:"2112"`
 	Mode                                 ApplicationMode `env:"APPLICATION_MODE" envDefault:"server"`
@@ -32,9 +32,7 @@ type Configuration struct {
 }
 
 func NewConfig() *Configuration {
-	config := &Configuration{
-		ServiceName: "celery-monitor",
-	}
+	config := &Configuration{}
 	if err := env.Parse(config); err != nil {
 		Logger.Fatal("Unable to parse Configuration")
 	}
