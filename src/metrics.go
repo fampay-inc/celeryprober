@@ -32,7 +32,7 @@ var (
 )
 
 // InitMetrics initializes all metrics with proper naming conventions
-func InitMetrics(serviceName string) *Metrics {
+func InitMetrics() *Metrics {
 	var m *Metrics
 
 	metricsOnce.Do(func() {
@@ -47,7 +47,10 @@ func InitMetrics(serviceName string) *Metrics {
 		factory := promauto.With(registry)
 
 		// Common labels for all metrics
-		commonLabels := prometheus.Labels{"service": serviceName}
+		commonLabels := prometheus.Labels{}
+
+		// Define custom histogram buckets (in seconds)
+		customBuckets := []float64{0.5, 1, 2.5, 5, 10, 15, 30, 60, 120, 300}
 
 		m = &Metrics{
 			registry: registry,
@@ -61,7 +64,7 @@ func InitMetrics(serviceName string) *Metrics {
 					Help:        "Total number of celery tasks sent",
 					ConstLabels: commonLabels,
 				},
-				[]string{"task_name", "queue"},
+				[]string{"task_name", "queue", "probe_name"},
 			),
 
 			taskReceivedTotal: factory.NewCounterVec(
@@ -72,7 +75,7 @@ func InitMetrics(serviceName string) *Metrics {
 					Help:        "Total number of celery tasks received",
 					ConstLabels: commonLabels,
 				},
-				[]string{"task_name"},
+				[]string{"task_name", "probe_name"},
 			),
 
 			taskStartedTotal: factory.NewCounterVec(
@@ -83,7 +86,7 @@ func InitMetrics(serviceName string) *Metrics {
 					Help:        "Total number of celery tasks started",
 					ConstLabels: commonLabels,
 				},
-				[]string{"task_name"},
+				[]string{"task_name", "probe_name"},
 			),
 
 			taskSucceededTotal: factory.NewCounterVec(
@@ -94,7 +97,7 @@ func InitMetrics(serviceName string) *Metrics {
 					Help:        "Total number of celery tasks succeeded",
 					ConstLabels: commonLabels,
 				},
-				[]string{"task_name"},
+				[]string{"task_name", "probe_name"},
 			),
 
 			taskFailedTotal: factory.NewCounterVec(
@@ -105,7 +108,7 @@ func InitMetrics(serviceName string) *Metrics {
 					Help:        "Total number of celery tasks failed",
 					ConstLabels: commonLabels,
 				},
-				[]string{"task_name"},
+				[]string{"task_name", "probe_name"},
 			),
 
 			taskDropTotal: factory.NewCounterVec(
@@ -116,7 +119,7 @@ func InitMetrics(serviceName string) *Metrics {
 					Help:        "Total number of celery tasks dropped",
 					ConstLabels: commonLabels,
 				},
-				[]string{"task_name", "last_event"},
+				[]string{"task_name", "last_event", "probe_name"},
 			),
 
 			// Timing metrics
@@ -127,9 +130,9 @@ func InitMetrics(serviceName string) *Metrics {
 					Name:        "processing_seconds",
 					Help:        "Time taken to process tasks",
 					ConstLabels: commonLabels,
-					Buckets:     prometheus.DefBuckets,
+					Buckets:     customBuckets, // Use custom buckets
 				},
-				[]string{"task_name"},
+				[]string{"task_name", "probe_name"},
 			),
 
 			taskQueueLatency: factory.NewHistogramVec(
@@ -139,9 +142,9 @@ func InitMetrics(serviceName string) *Metrics {
 					Name:        "queue_latency_seconds",
 					Help:        "Time spent in queue before processing",
 					ConstLabels: commonLabels,
-					Buckets:     prometheus.DefBuckets,
+					Buckets:     customBuckets, // Use custom buckets
 				},
-				[]string{"task_name"},
+				[]string{"task_name", "probe_name"},
 			),
 
 			taskEndToEndDuration: factory.NewHistogramVec(
@@ -151,9 +154,9 @@ func InitMetrics(serviceName string) *Metrics {
 					Name:        "end_to_end_seconds",
 					Help:        "Total time from task sent to completion",
 					ConstLabels: commonLabels,
-					Buckets:     prometheus.DefBuckets,
+					Buckets:     customBuckets, // Use custom buckets
 				},
-				[]string{"task_name", "status"},
+				[]string{"task_name", "status", "probe_name"},
 			),
 
 			// System metrics
@@ -165,7 +168,7 @@ func InitMetrics(serviceName string) *Metrics {
 					Help:        "Number of tasks currently in progress",
 					ConstLabels: commonLabels,
 				},
-				[]string{"task_name"},
+				[]string{"task_name", "probe_name"},
 			),
 		}
 
@@ -175,41 +178,41 @@ func InitMetrics(serviceName string) *Metrics {
 	return AppMetrics
 }
 
-func (m *Metrics) RecordTaskSent(taskName, queue string) {
-	m.taskSentTotal.WithLabelValues(taskName, queue).Inc()
+func (m *Metrics) RecordTaskSent(taskName, queue, probeName string) {
+	m.taskSentTotal.WithLabelValues(taskName, queue, probeName).Inc()
 }
 
-func (m *Metrics) RecordTaskReceived(taskName string) {
-	m.taskReceivedTotal.WithLabelValues(taskName).Inc()
+func (m *Metrics) RecordTaskReceived(taskName, probeName string) {
+	m.taskReceivedTotal.WithLabelValues(taskName, probeName).Inc()
 }
 
-func (m *Metrics) RecordTaskStarted(taskName string) {
-	m.taskStartedTotal.WithLabelValues(taskName).Inc()
-	m.taskInProgress.WithLabelValues(taskName).Inc()
+func (m *Metrics) RecordTaskStarted(taskName, probeName string) {
+	m.taskStartedTotal.WithLabelValues(taskName, probeName).Inc()
+	m.taskInProgress.WithLabelValues(taskName, probeName).Inc()
 }
 
-func (m *Metrics) RecordTaskSucceeded(taskName string, processingTime float64) {
-	m.taskSucceededTotal.WithLabelValues(taskName).Inc()
-	m.taskInProgress.WithLabelValues(taskName).Dec()
-	m.taskProcessingTime.WithLabelValues(taskName).Observe(processingTime)
+func (m *Metrics) RecordTaskSucceeded(taskName string, processingTime float64, probeName string) {
+	m.taskSucceededTotal.WithLabelValues(taskName, probeName).Inc()
+	m.taskInProgress.WithLabelValues(taskName, probeName).Dec()
+	m.taskProcessingTime.WithLabelValues(taskName, probeName).Observe(processingTime)
 }
 
-func (m *Metrics) RecordTaskFailed(taskName string, processingTime float64) {
-	m.taskFailedTotal.WithLabelValues(taskName).Inc()
-	m.taskInProgress.WithLabelValues(taskName).Dec()
-	m.taskProcessingTime.WithLabelValues(taskName).Observe(processingTime)
+func (m *Metrics) RecordTaskFailed(taskName string, processingTime float64, probeName string) {
+	m.taskFailedTotal.WithLabelValues(taskName, probeName).Inc()
+	m.taskInProgress.WithLabelValues(taskName, probeName).Dec()
+	m.taskProcessingTime.WithLabelValues(taskName, probeName).Observe(processingTime)
 }
 
-func (m *Metrics) RecordTaskDrop(taskName, lastEvent string) {
-	m.taskDropTotal.WithLabelValues(taskName, lastEvent).Inc()
+func (m *Metrics) RecordTaskDrop(taskName, lastEvent, probeName string) {
+	m.taskDropTotal.WithLabelValues(taskName, lastEvent, probeName).Inc()
 }
 
-func (m *Metrics) RecordTaskQueueLatency(taskName string, latency float64) {
-	m.taskQueueLatency.WithLabelValues(taskName).Observe(latency)
+func (m *Metrics) RecordTaskQueueLatency(taskName string, latency float64, probeName string) {
+	m.taskQueueLatency.WithLabelValues(taskName, probeName).Observe(latency)
 }
 
-func (m *Metrics) RecordTaskEndToEnd(taskName, status string, duration float64) {
-	m.taskEndToEndDuration.WithLabelValues(taskName, status).Observe(duration)
+func (m *Metrics) RecordTaskEndToEnd(taskName, status string, duration float64, probeName string) {
+	m.taskEndToEndDuration.WithLabelValues(taskName, status, probeName).Observe(duration)
 }
 
 var (
@@ -233,7 +236,7 @@ func init() {
 func RegisterMetrics() {
 	if pm := NewProbeManager(Config); len(pm.Probes) > 0 {
 		// Create application-level metrics once
-		appMetrics := InitMetrics("celery_monitor")
+		appMetrics := InitMetrics()
 		
 		Log.Info().Msg("Registering application-level metrics")
 		

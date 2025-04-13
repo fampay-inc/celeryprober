@@ -15,21 +15,21 @@ import (
 // Probe represents a single celery monitoring probe instance
 type Probe struct {
 	Config *ProbeConfig
-	
+
 	RedisClient *redis.Client
 	PubSub      *redis.PubSub
-	
+
 	TaskStatsMap      taskStatsMap
 	TaskStatsMapMutex sync.RWMutex
 	StaleTaskChannel  chan *StaleTask
-	
+
 	WaitGroup struct {
 		PubSubChannelConsumer    sync.WaitGroup
 		StaleTaskChannelConsumer sync.WaitGroup
 		Callback                 sync.WaitGroup
 	}
-	
-	Metrics *Metrics
+
+	Metrics   *Metrics
 	IsHealthy bool
 }
 
@@ -66,7 +66,7 @@ func NewProbe(config *ProbeConfig) *Probe {
 	}
 
 	// Initialize metrics for this probe
-	probe.Metrics = InitMetrics(config.Name)
+	probe.Metrics = InitMetrics()
 
 	return probe
 }
@@ -284,7 +284,7 @@ func (p *Probe) consumePubSubChannel() {
 			}
 
 			// Emitting task_sent counter metric
-			p.Metrics.RecordTaskSent(task_sent_event.Name, task_sent_event.Queue)
+			p.Metrics.RecordTaskSent(task_sent_event.Name, task_sent_event.Queue, p.Config.Name)
 
 			task_start_delay, err = task_sent_event.GetTaskStartDelayDuration()
 			if err != nil {
@@ -296,6 +296,8 @@ func (p *Probe) consumePubSubChannel() {
 		stats, ok := p.TaskStatsMap.Read(task_id)
 		if !ok {
 			stats = NewTaskStats()
+			// Set the probe name to ensure correct metrics labeling
+			stats.ProbeName = p.Config.Name
 			p.WaitGroup.Callback.Add(1)
 			stats.callBackTimer = time.AfterFunc(p.Config.StaleTaskCallbackDelayDuration+task_start_delay, func() {
 				defer p.WaitGroup.Callback.Done()
@@ -321,7 +323,7 @@ func (p *Probe) consumePubSubChannel() {
 					p.Config.Name, task_id, stats_json)
 
 				if stats.Name != "" {
-					p.Metrics.RecordTaskDrop(stats.Name, string(stats.GetLatestEvent()))
+					p.Metrics.RecordTaskDrop(stats.Name, string(stats.GetLatestEvent()), p.Config.Name)
 				}
 
 				p.StaleTaskChannel <- &StaleTask{
@@ -346,29 +348,29 @@ func (p *Probe) consumePubSubChannel() {
 		if stats.Name != "" {
 			switch event.Type() {
 			case TaskEventTypeReceived:
-				p.Metrics.RecordTaskReceived(stats.Name)
+				p.Metrics.RecordTaskReceived(stats.Name, p.Config.Name)
 				// Calculate and record queue latency if we have sent timestamps
 				if len(stats.SentTimestamps) > 0 && len(stats.ReceivedTimestamps) > 0 {
 					latency := stats.ReceivedTimestamps[len(stats.ReceivedTimestamps)-1] - stats.SentTimestamps[0]
 					if latency > 0 {
-						p.Metrics.RecordTaskQueueLatency(stats.Name, latency)
+						p.Metrics.RecordTaskQueueLatency(stats.Name, latency, p.Config.Name)
 					}
 				}
 
 			case TaskEventTypeStarted:
-				p.Metrics.RecordTaskStarted(stats.Name)
+				p.Metrics.RecordTaskStarted(stats.Name, p.Config.Name)
 
 			case TaskEventTypeSucceeded:
 				// Get the runtime from the most recent success
 				if len(stats.Runtimes) > 0 {
 					runtime := stats.Runtimes[len(stats.Runtimes)-1]
-					p.Metrics.RecordTaskSucceeded(stats.Name, runtime)
+					p.Metrics.RecordTaskSucceeded(stats.Name, runtime, p.Config.Name)
 
 					// Calculate and record end-to-end duration
 					if len(stats.SentTimestamps) > 0 && len(stats.SucceededTimestamps) > 0 {
 						duration := stats.SucceededTimestamps[len(stats.SucceededTimestamps)-1] - stats.SentTimestamps[0]
 						if duration > 0 {
-							p.Metrics.RecordTaskEndToEnd(stats.Name, "succeeded", duration)
+							p.Metrics.RecordTaskEndToEnd(stats.Name, "succeeded", duration, p.Config.Name)
 						}
 					}
 				}
@@ -377,13 +379,13 @@ func (p *Probe) consumePubSubChannel() {
 				// Get the runtime from the most recent failure
 				if len(stats.Runtimes) > 0 {
 					runtime := stats.Runtimes[len(stats.Runtimes)-1]
-					p.Metrics.RecordTaskFailed(stats.Name, runtime)
+					p.Metrics.RecordTaskFailed(stats.Name, runtime, p.Config.Name)
 
 					// Calculate and record end-to-end duration
 					if len(stats.SentTimestamps) > 0 && len(stats.FailedTimestamps) > 0 {
 						duration := stats.FailedTimestamps[len(stats.FailedTimestamps)-1] - stats.SentTimestamps[0]
 						if duration > 0 {
-							p.Metrics.RecordTaskEndToEnd(stats.Name, "failed", duration)
+							p.Metrics.RecordTaskEndToEnd(stats.Name, "failed", duration, p.Config.Name)
 						}
 					}
 				}

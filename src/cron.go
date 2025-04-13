@@ -120,7 +120,7 @@ func processCronForProbe(ctx context.Context, probe *ProbeConfig) {
 	// Send improved Slack message if there are tasks
 	if len(task_id_list) > 0 {
 		// Format current time for report
-		currentTime := fmt.Sprintf("%s", time.Now().Format(time.RFC1123))
+		currentTime := time.Now().Format(time.RFC1123)
 
 		// Create concise and clear Slack message
 		slackMsg := fmt.Sprintf("*Stale Tasks Report: %s*\n\n", probe.Name)
