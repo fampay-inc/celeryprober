@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -17,6 +18,7 @@ func RunRESTServer() {
 
 	// Initializing fiber
 	app := fiber.New(fiber.Config{
+		DisableStartupMessage: true,
 		ErrorHandler: func(c *fiber.Ctx, err error) error {
 			// Status code defaults to 500
 			code := fiber.StatusInternalServerError
@@ -57,9 +59,15 @@ func RunRESTServer() {
 	})
 
 	// Starting fiber server
+	address := fmt.Sprintf("0.0.0.0:%d", Config.RESTServerPort)
+	Log.Info().
+		Str("fiber_version", fiber.Version).
+		Str("address", address).
+		Int("handlers", len(app.GetRoutes(true))).
+		Bool("prefork", false).
+		Int("pid", os.Getpid()).
+		Msg("Starting server with integrated metrics endpoint")
 	go func() {
-		address := fmt.Sprintf(":%v", Config.RESTServerPort)
-		Log.Info().Int("port", Config.RESTServerPort).Msg("Starting server with integrated metrics endpoint")
 		err := app.Listen(address)
 		if err != nil && !strings.Contains(err.Error(), "use of closed network connection") {
 			Log.Fatal().Err(err).Msg("Failed to start server")
