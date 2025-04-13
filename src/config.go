@@ -27,36 +27,28 @@ type GlobalConfig struct {
 	ConfigFile       string          `env:"CONFIG_FILE" json:"-"` // Path to JSON config file for probes
 	SlackAccessToken string          `env:"SLACK_ACCESS_TOKEN" envDefault:"" json:"slack_access_token"`
 	SlackChannelId   string          `env:"SLACK_CHANNEL_ID" envDefault:"" json:"slack_channel_id"`
-
-	// List of probe configurations
-	Probes []*ProbeConfig `json:"probes"`
+	Probes []*ProbeConfig `json:"probes"` // List of probe configurations
 }
 
 // ProbeConfig contains configuration for a single celery monitoring probe
 type ProbeConfig struct {
-	// Probe identification
 	Name        string `json:"name" validate:"required"` // Name of the probe, used in metrics and logs
 	Enabled     bool   `json:"enabled"`                  // Whether this probe is enabled
 	Description string `json:"description,omitempty"`    // Optional description
 
-	// Redis configuration
 	CeleryRedisBrokerURL string `json:"celery_redis_broker_url" validate:"required"` // Redis broker URL for Celery
 	StaleTaskSetKey      string `json:"stale_task_set_key" validate:"required"`      // Redis key for storing stale tasks
 
-	// Generated fields
 	TaskEventChannels []string `json:"-"` // Generated Celery event channels to subscribe to
 
-	// Task processing configuration
 	StaleTaskCallbackContextTimeoutInSec int      `json:"stale_task_callback_context_timeout_sec" validate:"required"` // Timeout for stale task callbacks
 	StaleTaskCallbackDelayDurationInMin  int      `json:"stale_task_callback_delay_duration_min" validate:"required"`  // Delay before considering a task stale
 	BlacklistedTaskNames                 []string `json:"blacklisted_task_names,omitempty"`                            // Task names to ignore
 
-	// Computed fields (not from JSON)
-	StaleTaskCallbackContextTimeout time.Duration `json:"-"`
-	StaleTaskCallbackDelayDuration  time.Duration `json:"-"`
+	StaleTaskCallbackContextTimeout time.Duration `json:"-"` // Computed from StaleTaskCallbackContextTimeoutInSec
+	StaleTaskCallbackDelayDuration  time.Duration `json:"-"` // Computed from StaleTaskCallbackDelayDurationInMin
 }
 
-// DefaultProbeConfig creates a default probe configuration
 func DefaultProbeConfig() *ProbeConfig {
 	return &ProbeConfig{
 		Name:                                 "default",
@@ -70,7 +62,6 @@ func DefaultProbeConfig() *ProbeConfig {
 	}
 }
 
-// Initialize computes derived fields from configuration values
 func (pc *ProbeConfig) Initialize() {
 	pc.StaleTaskCallbackContextTimeout = time.Duration(pc.StaleTaskCallbackContextTimeoutInSec) * time.Second
 	pc.StaleTaskCallbackDelayDuration = time.Duration(pc.StaleTaskCallbackDelayDurationInMin) * time.Minute

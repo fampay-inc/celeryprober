@@ -14,29 +14,22 @@ import (
 
 // Probe represents a single celery monitoring probe instance
 type Probe struct {
-	// Configuration for this probe
 	Config *ProbeConfig
-
-	// Redis client for this probe
+	
 	RedisClient *redis.Client
 	PubSub      *redis.PubSub
-
-	// Task tracking
+	
 	TaskStatsMap      taskStatsMap
 	TaskStatsMapMutex sync.RWMutex
 	StaleTaskChannel  chan *StaleTask
-
-	// Synchronization
+	
 	WaitGroup struct {
 		PubSubChannelConsumer    sync.WaitGroup
 		StaleTaskChannelConsumer sync.WaitGroup
 		Callback                 sync.WaitGroup
 	}
-
-	// Metrics for this probe
+	
 	Metrics *Metrics
-
-	// Health status
 	IsHealthy bool
 }
 
@@ -304,7 +297,7 @@ func (p *Probe) consumePubSubChannel() {
 		if !ok {
 			stats = NewTaskStats()
 			p.WaitGroup.Callback.Add(1)
-			stats.callBack_timer = time.AfterFunc(p.Config.StaleTaskCallbackDelayDuration+task_start_delay, func() {
+			stats.callBackTimer = time.AfterFunc(p.Config.StaleTaskCallbackDelayDuration+task_start_delay, func() {
 				defer p.WaitGroup.Callback.Done()
 
 				var is_blacklisted_task bool
@@ -343,7 +336,7 @@ func (p *Probe) consumePubSubChannel() {
 				- task-sent event is received out of order
 				- task-sent event is received in case of task retry
 			*/
-			stats.callBack_timer.Reset(p.Config.StaleTaskCallbackDelayDuration + task_start_delay)
+			stats.callBackTimer.Reset(p.Config.StaleTaskCallbackDelayDuration + task_start_delay)
 		}
 
 		// Process the event (update TaskStats)
@@ -399,7 +392,7 @@ func (p *Probe) consumePubSubChannel() {
 
 		// Check if task lifecycle is complete
 		if stats.IsTaskLifecycleComplete() {
-			if timer_stopped := stats.callBack_timer.Stop(); timer_stopped {
+			if timer_stopped := stats.callBackTimer.Stop(); timer_stopped {
 				p.WaitGroup.Callback.Done()
 			}
 			p.TaskStatsMap.Delete(task_id)

@@ -7,130 +7,155 @@ import (
 	"github.com/google/uuid"
 )
 
+// TaskStats tracks the lifecycle of a Celery task through various events
 type TaskStats struct {
-	callBack_timer           *time.Timer
-	Name                     string    `json:"name"`
-	Args                     string    `json:"args"`
-	LatestEventTimestamp     float64   `json:"latest_event_timestamp"`
-	SentTimestamps           []float64 `json:"sent_timestamps"`
-	ReceivedTimestamps       []float64 `json:"received_timestamps"`
-	StartedTimestamps        []float64 `json:"started_timestamps"`
-	SucceededTimestamps      []float64 `json:"succeeded_timestamps"`
-	FailedTimestamps         []float64 `json:"failed_timestamps"`
-	Runtimes                 []float64 `json:"runtimes"`
-	SentRetries              uint8     `json:"sent_retries"`
-	ReceivedRetries          uint8     `json:"received_retries"`
-	EventsReceivedInSequence bool      `json:"events_received_in_sequence"`
+	// callBackTimer is used for scheduling cleanup of stale tasks
+	callBackTimer            *time.Timer // Keeping original name for compatibility with other code
+	Name                     string      `json:"name"`
+	Args                     string      `json:"args"`
+	LatestEventTimestamp     float64     `json:"latest_event_timestamp"`
+	SentTimestamps           []float64   `json:"sent_timestamps"`
+	ReceivedTimestamps       []float64   `json:"received_timestamps"`
+	StartedTimestamps        []float64   `json:"started_timestamps"`
+	SucceededTimestamps      []float64   `json:"succeeded_timestamps"`
+	FailedTimestamps         []float64   `json:"failed_timestamps"`
+	Runtimes                 []float64   `json:"runtimes"`
+	SentRetries              uint8       `json:"sent_retries"`
+	ReceivedRetries          uint8       `json:"received_retries"`
+	EventsReceivedInSequence bool        `json:"events_received_in_sequence"`
+	// ProbeName associates this task with a specific probe
+	ProbeName string `json:"probe_name,omitempty"`
 }
 
+// NewTaskStats creates and initializes a new TaskStats instance
 func NewTaskStats() *TaskStats {
 	return &TaskStats{
-		SentTimestamps:      []float64{},
-		ReceivedTimestamps:  []float64{},
-		StartedTimestamps:   []float64{},
-		SucceededTimestamps: []float64{},
-		FailedTimestamps:    []float64{},
-		Runtimes:            []float64{},
+		SentTimestamps:           []float64{},
+		ReceivedTimestamps:       []float64{},
+		StartedTimestamps:        []float64{},
+		SucceededTimestamps:      []float64{},
+		FailedTimestamps:         []float64{},
+		Runtimes:                 []float64{},
+		EventsReceivedInSequence: true,
 	}
 }
 
+// IsTaskLifecycleComplete determines if a task has completed its lifecycle
+// by analyzing the pattern of events received
 func (stats *TaskStats) IsTaskLifecycleComplete() bool {
-	succeeded_event_len := len(stats.SucceededTimestamps)
-	failed_event_len := len(stats.FailedTimestamps)
+	succeededEventLen := len(stats.SucceededTimestamps)
+	failedEventLen := len(stats.FailedTimestamps)
 
-	if succeeded_event_len == 0 && failed_event_len == 0 {
+	// No terminal events yet
+	if succeededEventLen == 0 && failedEventLen == 0 {
 		return false
 	}
 
-	sent_event_length := len(stats.SentTimestamps)
-	received_event_length := len(stats.ReceivedTimestamps)
-	started_event_length := len(stats.StartedTimestamps)
+	sentEventLength := len(stats.SentTimestamps)
+	receivedEventLength := len(stats.ReceivedTimestamps)
+	startedEventLength := len(stats.StartedTimestamps)
 
-	retries_sum := stats.SentRetries + stats.ReceivedRetries
+	retriesSum := stats.SentRetries + stats.ReceivedRetries
 
-	if succeeded_event_len > 0 {
-		is_success_lifecycle_complete :=
-			sent_event_length == received_event_length &&
-				received_event_length == started_event_length &&
-				started_event_length == succeeded_event_len
-		if is_success_lifecycle_complete {
+	if succeededEventLen > 0 {
+		// Normal success case - all events received in sequence
+		isSuccessLifecycleComplete :=
+			sentEventLength == receivedEventLength &&
+				receivedEventLength == startedEventLength &&
+				startedEventLength == succeededEventLen
+		if isSuccessLifecycleComplete {
 			return true
 		}
 
-		is_retry_success_lifecycle_complete :=
-			retries_sum != 0 &&
-				retries_sum%2 == 0 &&
-				sent_event_length == received_event_length &&
-				received_event_length == started_event_length &&
-				succeeded_event_len == 1
-		if is_retry_success_lifecycle_complete {
+		// Success with retries
+		isRetrySuccessLifecycleComplete :=
+			retriesSum != 0 &&
+				retriesSum%2 == 0 &&
+				sentEventLength == receivedEventLength &&
+				receivedEventLength == startedEventLength &&
+				succeededEventLen == 1
+		if isRetrySuccessLifecycleComplete {
 			return true
 		}
-	} else if failed_event_len > 0 {
-		is_failed_lifecycle_complete :=
-			sent_event_length == received_event_length &&
-				received_event_length == started_event_length &&
-				started_event_length == failed_event_len
-		if is_failed_lifecycle_complete {
+	} else if failedEventLen > 0 {
+		// Normal failure case - all events received in sequence
+		isFailedLifecycleComplete :=
+			sentEventLength == receivedEventLength &&
+				receivedEventLength == startedEventLength &&
+				startedEventLength == failedEventLen
+		if isFailedLifecycleComplete {
 			return true
 		}
 
-		is_retry_failed_lifecycle_complete :=
-			retries_sum != 0 &&
-				retries_sum%2 == 0 &&
-				sent_event_length == received_event_length &&
-				received_event_length == started_event_length &&
-				failed_event_len == 1
-		if is_retry_failed_lifecycle_complete {
+		// Failure with retries
+		isRetryFailedLifecycleComplete :=
+			retriesSum != 0 &&
+				retriesSum%2 == 0 &&
+				sentEventLength == receivedEventLength &&
+				receivedEventLength == startedEventLength &&
+				failedEventLen == 1
+		if isRetryFailedLifecycleComplete {
 			return true
 		}
 	}
 
-	is_possible_late_ack_case_lifecycle_complete :=
-		received_event_length > 1 &&
-			received_event_length == started_event_length &&
-			received_event_length > sent_event_length &&
-			sent_event_length >= 1
-	if is_possible_late_ack_case_lifecycle_complete {
+	// Handle late acknowledgment case
+	isPossibleLateAckCaseLifecycleComplete :=
+		receivedEventLength > 1 &&
+			receivedEventLength == startedEventLength &&
+			receivedEventLength > sentEventLength &&
+			sentEventLength >= 1
+	if isPossibleLateAckCaseLifecycleComplete {
 		return true
 	}
 
 	return false
 }
 
+// GetLatestEvent determines the type of the most recent event for this task
 func (stats *TaskStats) GetLatestEvent() TaskEventType {
+	// If we have runtimes, it means the task has either succeeded or failed
 	if len(stats.Runtimes) > 0 {
+		// Check if the latest timestamp matches a success event
 		for _, t := range stats.SucceededTimestamps {
 			if t == stats.LatestEventTimestamp {
 				return TaskEventTypeSucceeded
 			}
 		}
+		// If not a success event but we have runtimes, it must be a failure
 		return TaskEventTypeFailed
 	}
 
+	// Check if the latest timestamp matches a started event
 	for _, t := range stats.StartedTimestamps {
 		if t == stats.LatestEventTimestamp {
 			return TaskEventTypeStarted
 		}
 	}
 
+	// Check if the latest timestamp matches a received event
 	for _, t := range stats.ReceivedTimestamps {
 		if t == stats.LatestEventTimestamp {
 			return TaskEventTypeReceived
 		}
 	}
 
+	// If none of the above, it must be a sent event
 	return TaskEventTypeSent
 }
 
+// waitGroup holds WaitGroups for different goroutines in the application
 type waitGroup struct {
 	PubSubChannelConsumer    sync.WaitGroup
 	StaleTaskChannelConsumer sync.WaitGroup
 	Callback                 sync.WaitGroup
 }
 
+// taskStatsMap provides a map of task IDs to their stats
 type taskStatsMap map[uuid.UUID]*TaskStats
 
+// Read retrieves a TaskStats from the map
+// Note: Caller must handle synchronization with the mutex in the Probe struct
 func (m taskStatsMap) Read(key uuid.UUID) (value *TaskStats, ok bool) {
 	// The mutex is now part of the Probe struct
 	// and is handled by the caller
@@ -138,23 +163,30 @@ func (m taskStatsMap) Read(key uuid.UUID) (value *TaskStats, ok bool) {
 	return
 }
 
+// Write adds or updates a TaskStats in the map
+// Note: Caller must handle synchronization with the mutex in the Probe struct
 func (m taskStatsMap) Write(key uuid.UUID, value *TaskStats) {
 	// The mutex is now part of the Probe struct
 	// and is handled by the caller
 	m[key] = value
 }
 
+// Delete removes a TaskStats from the map
+// Note: Caller must handle synchronization with the mutex in the Probe struct
 func (m taskStatsMap) Delete(key uuid.UUID) {
 	// The mutex is now part of the Probe struct
 	// and is handled by the caller
 	delete(m, key)
 }
 
+// StaleTask represents a task that has been identified as stale
+// and needs to be processed for cleanup
 type StaleTask struct {
 	TaskId uuid.UUID
 	Stats  *TaskStats
 }
 
+// RawEvent represents the raw event data received from the message broker
 type RawEvent struct {
 	Body            string            `json:"body"`
 	ContentEncoding string            `json:"content-encoding"`
@@ -163,8 +195,10 @@ type RawEvent struct {
 	Properties      map[string]any    `json:"properties"`
 }
 
+// TaskEventType defines the possible types of Celery task events
 type TaskEventType string
 
+// Event type constants for Celery task lifecycle
 const (
 	TaskEventTypeSent      TaskEventType = "task-sent"
 	TaskEventTypeReceived  TaskEventType = "task-received"
@@ -173,17 +207,26 @@ const (
 	TaskEventTypeFailed    TaskEventType = "task-failed"
 )
 
+// TaskEvent represents a Celery task event
+// This interface allows for polymorphic handling of different event types
 type TaskEvent interface {
+	// ID returns the unique identifier for the task
 	ID() uuid.UUID
+
+	// Process updates the TaskStats with information from this event
 	Process(stats *TaskStats)
+
+	// Type returns the type of this event
 	Type() TaskEventType
+
+	// IsTerminal indicates if this event represents the end of a task's lifecycle
 	IsTerminal() bool
 }
 
-// +-------------------- Task Sent Begins --------------------+
 
+// TaskSent represents a task-sent event from Celery
 type TaskSent struct {
-	TaskId    uuid.UUID `json:"uuid"`
+	TaskID    uuid.UUID `json:"uuid"` // Renamed for Go conventions but preserving JSON field name
 	Timestamp float64   `json:"timestamp"`
 	Name      string    `json:"name"`
 	Args      string    `json:"args"`
@@ -193,13 +236,14 @@ type TaskSent struct {
 }
 
 func (e *TaskSent) ID() uuid.UUID {
-	return e.TaskId
+	return e.TaskID
 }
 
 func (e *TaskSent) Type() TaskEventType {
 	return TaskEventTypeSent
 }
 
+// Process updates the TaskStats with information from this event
 func (e *TaskSent) Process(stats *TaskStats) {
 	if CheckIfEventAlreadyProcessed(e.Timestamp, stats.SentTimestamps) {
 		return
@@ -215,47 +259,51 @@ func (e *TaskSent) Process(stats *TaskStats) {
 	}
 	stats.EventsReceivedInSequence = true
 
-	// Removed metrics recording to follow Single Responsibility Principle
+	
 }
 
 func (e *TaskSent) IsTerminal() bool {
 	return false
 }
 
-func (e *TaskSent) GetTaskStartDelayDuration() (duration time.Duration, err error) {
+// GetTaskStartDelayDuration calculates the delay until the task should start
+// based on the ETA field
+func (e *TaskSent) GetTaskStartDelayDuration() (time.Duration, error) {
 	if e.ETA == "" {
-		return
+		return 0, nil
 	}
 
-	task_start_time, err := time.Parse(time.RFC3339Nano, e.ETA)
+	taskStartTime, err := time.Parse(time.RFC3339Nano, e.ETA)
 	if err != nil {
-		return
+		return 0, err
 	}
 
-	task_start_delay_in_sec := task_start_time.Unix() - time.Now().Unix()
-	if task_start_delay_in_sec > 0 {
-		duration = time.Duration(task_start_delay_in_sec) * time.Second
+	now := time.Now()
+	taskStartDelayInSec := taskStartTime.Unix() - now.Unix()
+	if taskStartDelayInSec <= 0 {
+		return 0, nil
 	}
 
-	return
+	return time.Duration(taskStartDelayInSec) * time.Second, nil
 }
 
-// +-------------------- Task Received Begins --------------------+
 
+// TaskReceived represents a task-received event from Celery
 type TaskReceived struct {
-	TaskId    uuid.UUID `json:"uuid"`
+	TaskID    uuid.UUID `json:"uuid"` // Renamed for Go conventions but preserving JSON field name
 	Timestamp float64   `json:"timestamp"`
 	Retries   uint8     `json:"retries"`
 }
 
 func (e *TaskReceived) ID() uuid.UUID {
-	return e.TaskId
+	return e.TaskID
 }
 
 func (e *TaskReceived) Type() TaskEventType {
 	return TaskEventTypeReceived
 }
 
+// Process updates the TaskStats with information from this event
 func (e *TaskReceived) Process(stats *TaskStats) {
 	if CheckIfEventAlreadyProcessed(e.Timestamp, stats.ReceivedTimestamps) {
 		return
@@ -271,28 +319,29 @@ func (e *TaskReceived) Process(stats *TaskStats) {
 		stats.EventsReceivedInSequence = false
 	}
 
-	// Removed metrics recording to follow Single Responsibility Principle
+	
 }
 
 func (e *TaskReceived) IsTerminal() bool {
 	return false
 }
 
-// +-------------------- Task Started Begins --------------------+
 
+// TaskStarted represents a task-started event from Celery
 type TaskStarted struct {
-	TaskId    uuid.UUID `json:"uuid"`
+	TaskID    uuid.UUID `json:"uuid"` // Renamed for Go conventions but preserving JSON field name
 	Timestamp float64   `json:"timestamp"`
 }
 
 func (e *TaskStarted) ID() uuid.UUID {
-	return e.TaskId
+	return e.TaskID
 }
 
 func (e *TaskStarted) Type() TaskEventType {
 	return TaskEventTypeStarted
 }
 
+// Process updates the TaskStats with information from this event
 func (e *TaskStarted) Process(stats *TaskStats) {
 	if CheckIfEventAlreadyProcessed(e.Timestamp, stats.StartedTimestamps) {
 		return
@@ -305,29 +354,30 @@ func (e *TaskStarted) Process(stats *TaskStats) {
 		stats.LatestEventTimestamp = e.Timestamp
 	}
 
-	// Removed metrics recording to follow Single Responsibility Principle
+	
 }
 
 func (e *TaskStarted) IsTerminal() bool {
 	return false
 }
 
-// +-------------------- Task Succeeded Begins --------------------+
 
+// TaskSucceeded represents a task-succeeded event from Celery
 type TaskSucceeded struct {
-	TaskId    uuid.UUID `json:"uuid"`
+	TaskID    uuid.UUID `json:"uuid"` // Renamed for Go conventions but preserving JSON field name
 	Timestamp float64   `json:"timestamp"`
 	Runtime   float64   `json:"runtime"`
 }
 
 func (e *TaskSucceeded) ID() uuid.UUID {
-	return e.TaskId
+	return e.TaskID
 }
 
 func (e *TaskSucceeded) Type() TaskEventType {
 	return TaskEventTypeSucceeded
 }
 
+// Process updates the TaskStats with information from this event
 func (e *TaskSucceeded) Process(stats *TaskStats) {
 	if CheckIfEventAlreadyProcessed(e.Timestamp, stats.SucceededTimestamps) {
 		return
@@ -341,29 +391,30 @@ func (e *TaskSucceeded) Process(stats *TaskStats) {
 		stats.LatestEventTimestamp = e.Timestamp
 	}
 
-	// Removed metrics recording to follow Single Responsibility Principle
+	
 }
 
 func (e *TaskSucceeded) IsTerminal() bool {
 	return true
 }
 
-// +-------------------- Task Failed Begins --------------------+
 
+// TaskFailed represents a task-failed event from Celery
 type TaskFailed struct {
-	TaskId    uuid.UUID `json:"uuid"`
+	TaskID    uuid.UUID `json:"uuid"` // Renamed for Go conventions but preserving JSON field name
 	Timestamp float64   `json:"timestamp"`
 	Runtime   float64   `json:"runtime"`
 }
 
 func (e *TaskFailed) ID() uuid.UUID {
-	return e.TaskId
+	return e.TaskID
 }
 
 func (e *TaskFailed) Type() TaskEventType {
 	return TaskEventTypeFailed
 }
 
+// Process updates the TaskStats with information from this event
 func (e *TaskFailed) Process(stats *TaskStats) {
 	if CheckIfEventAlreadyProcessed(e.Timestamp, stats.FailedTimestamps) {
 		return
@@ -377,7 +428,7 @@ func (e *TaskFailed) Process(stats *TaskStats) {
 		stats.LatestEventTimestamp = e.Timestamp
 	}
 
-	// Removed metrics recording to follow Single Responsibility Principle
+	
 }
 
 func (e *TaskFailed) IsTerminal() bool {

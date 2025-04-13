@@ -4,12 +4,12 @@ import (
 	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 // Metrics contains all the Prometheus metrics for the application
 type Metrics struct {
-	// Task event metrics
 	taskSentTotal      *prometheus.CounterVec
 	taskReceivedTotal  *prometheus.CounterVec
 	taskStartedTotal   *prometheus.CounterVec
@@ -17,22 +17,17 @@ type Metrics struct {
 	taskFailedTotal    *prometheus.CounterVec
 	taskDropTotal      *prometheus.CounterVec
 
-	// Task timing metrics
 	taskProcessingTime   *prometheus.HistogramVec
 	taskQueueLatency     *prometheus.HistogramVec
 	taskEndToEndDuration *prometheus.HistogramVec
 
-	// System metrics
 	taskInProgress *prometheus.GaugeVec
 
-	// Registry for all metrics
 	registry *prometheus.Registry
 }
 
 var (
-	// Global metrics instance
 	AppMetrics *Metrics
-	// Ensure initialization happens only once
 	metricsOnce sync.Once
 )
 
@@ -180,53 +175,44 @@ func InitMetrics(serviceName string) *Metrics {
 	return AppMetrics
 }
 
-// RecordTaskSent records a task sent event
 func (m *Metrics) RecordTaskSent(taskName, queue string) {
 	m.taskSentTotal.WithLabelValues(taskName, queue).Inc()
 }
 
-// RecordTaskReceived records a task received event
 func (m *Metrics) RecordTaskReceived(taskName string) {
 	m.taskReceivedTotal.WithLabelValues(taskName).Inc()
 }
 
-// RecordTaskStarted records a task started event
 func (m *Metrics) RecordTaskStarted(taskName string) {
 	m.taskStartedTotal.WithLabelValues(taskName).Inc()
 	m.taskInProgress.WithLabelValues(taskName).Inc()
 }
 
-// RecordTaskSucceeded records a task succeeded event
 func (m *Metrics) RecordTaskSucceeded(taskName string, processingTime float64) {
 	m.taskSucceededTotal.WithLabelValues(taskName).Inc()
 	m.taskInProgress.WithLabelValues(taskName).Dec()
 	m.taskProcessingTime.WithLabelValues(taskName).Observe(processingTime)
 }
 
-// RecordTaskFailed records a task failed event
 func (m *Metrics) RecordTaskFailed(taskName string, processingTime float64) {
 	m.taskFailedTotal.WithLabelValues(taskName).Inc()
 	m.taskInProgress.WithLabelValues(taskName).Dec()
 	m.taskProcessingTime.WithLabelValues(taskName).Observe(processingTime)
 }
 
-// RecordTaskDrop records a task drop event
 func (m *Metrics) RecordTaskDrop(taskName, lastEvent string) {
 	m.taskDropTotal.WithLabelValues(taskName, lastEvent).Inc()
 }
 
-// RecordTaskQueueLatency records the time a task spent in the queue
 func (m *Metrics) RecordTaskQueueLatency(taskName string, latency float64) {
 	m.taskQueueLatency.WithLabelValues(taskName).Observe(latency)
 }
 
-// RecordTaskEndToEnd records the total time from task sent to completion
 func (m *Metrics) RecordTaskEndToEnd(taskName, status string, duration float64) {
 	m.taskEndToEndDuration.WithLabelValues(taskName, status).Observe(duration)
 }
 
 var (
-	// globalRegistry is the shared metric registry for the application
 	globalRegistry *prometheus.Registry
 )
 
@@ -235,20 +221,42 @@ func init() {
 	globalRegistry = prometheus.NewRegistry()
 
 	// Register standard collectors
-	globalRegistry.MustRegister(prometheus.NewProcessCollector(prometheus.ProcessCollectorOpts{}))
-	globalRegistry.MustRegister(prometheus.NewGoCollector())
+	globalRegistry.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
+	globalRegistry.MustRegister(collectors.NewGoCollector())
 }
 
 // registerProbeMetrics adds probe-specific metrics to the global registry
 func registerProbeMetrics() {
 	// If we have a probe manager with active probes, gather their metrics
 	if pm := NewProbeManager(Config); len(pm.Probes) > 0 {
-		// For each probe, register its metrics with the global registry
+		// Create application-level metrics once
+		appMetrics := InitMetrics("celery_monitor")
+		
+		// Register application metrics with the global registry
+		Log.Info().Msg("Registering common metrics at application level")
+		
+		// Task event counters
+		globalRegistry.MustRegister(appMetrics.taskSentTotal)
+		globalRegistry.MustRegister(appMetrics.taskReceivedTotal)
+		globalRegistry.MustRegister(appMetrics.taskStartedTotal)
+		globalRegistry.MustRegister(appMetrics.taskSucceededTotal)
+		globalRegistry.MustRegister(appMetrics.taskFailedTotal)
+		globalRegistry.MustRegister(appMetrics.taskDropTotal)
+		
+		// Task timing metrics
+		globalRegistry.MustRegister(appMetrics.taskProcessingTime)
+		globalRegistry.MustRegister(appMetrics.taskQueueLatency)
+		globalRegistry.MustRegister(appMetrics.taskEndToEndDuration)
+		
+		// System metrics
+		globalRegistry.MustRegister(appMetrics.taskInProgress)
+		
+		// Register probe info metrics for each probe
 		for name, probe := range pm.Probes {
-			if probe.Config.Enabled && probe.Metrics != nil && probe.Metrics.registry != nil {
-				Log.Info().Str("probe", name).Msg("Adding metrics from probe to global registry")
-
-				// Add probe info metric
+			if probe.Config.Enabled && probe.Metrics != nil {
+				Log.Info().Str("probe", name).Msg("Adding probe info metric")
+				
+				// Add probe info metric only - other metrics are registered at the app level
 				globalRegistry.MustRegister(prometheus.NewGaugeFunc(
 					prometheus.GaugeOpts{
 						Namespace: "celery_monitor",
@@ -262,35 +270,9 @@ func registerProbeMetrics() {
 					},
 					func() float64 { return 1 },
 				))
-
-				// Register all task metrics from the probe with the global registry
-				// We need to directly register each metric collector
-				
-				// Task event counters
-				globalRegistry.MustRegister(probe.Metrics.taskSentTotal)
-				globalRegistry.MustRegister(probe.Metrics.taskReceivedTotal)
-				globalRegistry.MustRegister(probe.Metrics.taskStartedTotal)
-				globalRegistry.MustRegister(probe.Metrics.taskSucceededTotal)
-				globalRegistry.MustRegister(probe.Metrics.taskFailedTotal)
-				globalRegistry.MustRegister(probe.Metrics.taskDropTotal)
-				
-				// Task timing metrics
-				globalRegistry.MustRegister(probe.Metrics.taskProcessingTime)
-				globalRegistry.MustRegister(probe.Metrics.taskQueueLatency)
-				globalRegistry.MustRegister(probe.Metrics.taskEndToEndDuration)
-				
-				// System metrics
-				globalRegistry.MustRegister(probe.Metrics.taskInProgress)
-				
-				// Gather metrics to report count
-				metrics, err := probe.Metrics.registry.Gather()
-				if err != nil {
-					Log.Error().Err(err).Str("probe", name).Msg("Failed to gather metrics from probe")
-					continue
-				}
-
-				Log.Info().Str("probe", name).Int("metric_families", len(metrics)).Msg("Registered metrics from probe")
 			}
 		}
+		
+		Log.Info().Int("probes", len(pm.Probes)).Msg("Registered metrics for all probes")
 	}
 }
