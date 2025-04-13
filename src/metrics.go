@@ -39,9 +39,9 @@ func InitMetrics(serviceName string) *Metrics {
 		registry := prometheus.NewRegistry()
 
 		// Register the Go collector (collects runtime metrics about the Go process)
-		registry.MustRegister(prometheus.NewGoCollector())
+		registry.MustRegister(collectors.NewGoCollector())
 		// Register process collector (collects metrics about the process)
-		registry.MustRegister(prometheus.NewProcessCollector(prometheus.ProcessCollectorOpts{}))
+		registry.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 
 		// Create a metrics factory that automatically registers metrics with our registry
 		factory := promauto.With(registry)
@@ -221,58 +221,74 @@ func init() {
 	globalRegistry = prometheus.NewRegistry()
 
 	// Register standard collectors
-	globalRegistry.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
-	globalRegistry.MustRegister(collectors.NewGoCollector())
+	globalRegistry.MustRegister(
+		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+		collectors.NewGoCollector(),
+	)
 }
 
 // registerProbeMetrics adds probe-specific metrics to the global registry
-func registerProbeMetrics() {
-	// If we have a probe manager with active probes, gather their metrics
+// RegisterMetrics registers all metrics with the global registry
+// This ensures metrics are registered once at the application level, regardless of probe configuration
+func RegisterMetrics() {
 	if pm := NewProbeManager(Config); len(pm.Probes) > 0 {
 		// Create application-level metrics once
 		appMetrics := InitMetrics("celery_monitor")
 		
-		// Register application metrics with the global registry
-		Log.Info().Msg("Registering common metrics at application level")
+		Log.Info().Msg("Registering application-level metrics")
 		
-		// Task event counters
-		globalRegistry.MustRegister(appMetrics.taskSentTotal)
-		globalRegistry.MustRegister(appMetrics.taskReceivedTotal)
-		globalRegistry.MustRegister(appMetrics.taskStartedTotal)
-		globalRegistry.MustRegister(appMetrics.taskSucceededTotal)
-		globalRegistry.MustRegister(appMetrics.taskFailedTotal)
-		globalRegistry.MustRegister(appMetrics.taskDropTotal)
-		
-		// Task timing metrics
-		globalRegistry.MustRegister(appMetrics.taskProcessingTime)
-		globalRegistry.MustRegister(appMetrics.taskQueueLatency)
-		globalRegistry.MustRegister(appMetrics.taskEndToEndDuration)
-		
-		// System metrics
-		globalRegistry.MustRegister(appMetrics.taskInProgress)
-		
-		// Register probe info metrics for each probe
-		for name, probe := range pm.Probes {
-			if probe.Config.Enabled && probe.Metrics != nil {
-				Log.Info().Str("probe", name).Msg("Adding probe info metric")
-				
-				// Add probe info metric only - other metrics are registered at the app level
-				globalRegistry.MustRegister(prometheus.NewGaugeFunc(
-					prometheus.GaugeOpts{
-						Namespace: "celery_monitor",
-						Name:      "probe_info",
-						Help:      "Information about the probe",
-						ConstLabels: prometheus.Labels{
-							"probe":       name,
-							"description": probe.Config.Description,
-							"redis_url":   probe.Config.CeleryRedisBrokerURL,
-						},
-					},
-					func() float64 { return 1 },
-				))
-			}
+		// Register all application metrics with the global registry at once
+		// This approach is more maintainable than registering each metric individually
+		metricsToRegister := []prometheus.Collector{
+			// Task event counters
+			appMetrics.taskSentTotal,
+			appMetrics.taskReceivedTotal,
+			appMetrics.taskStartedTotal,
+			appMetrics.taskSucceededTotal,
+			appMetrics.taskFailedTotal,
+			appMetrics.taskDropTotal,
+			
+			// Task timing metrics
+			appMetrics.taskProcessingTime,
+			appMetrics.taskQueueLatency,
+			appMetrics.taskEndToEndDuration,
+			
+			// System metrics
+			appMetrics.taskInProgress,
 		}
 		
+		// Register all metrics at once
+		for _, metric := range metricsToRegister {
+			globalRegistry.MustRegister(metric)
+		}
+		
+		// Register probe info metrics for each enabled probe
+		RegisterProbeInfoMetrics(pm.Probes)
+		
 		Log.Info().Int("probes", len(pm.Probes)).Msg("Registered metrics for all probes")
+	}
+}
+
+// RegisterProbeInfoMetrics registers probe-specific info metrics
+func RegisterProbeInfoMetrics(probes map[string]*Probe) {
+	for name, probe := range probes {
+		if probe.Config.Enabled && probe.Metrics != nil {
+			Log.Info().Str("probe", name).Msg("Adding probe info metric")
+			
+			// Add probe info metric - other metrics are registered at the application level
+			globalRegistry.MustRegister(prometheus.NewGaugeFunc(
+				prometheus.GaugeOpts{
+					Namespace: "celery_monitor",
+					Name:      "probe_info",
+					Help:      "Information about the probe",
+					ConstLabels: prometheus.Labels{
+						"probe":       name,
+						"description": probe.Config.Description,
+						"redis_url":   probe.Config.CeleryRedisBrokerURL,
+					},
+				},
+				func() float64 { return 1 },
+			))
+		}
 	}
 }

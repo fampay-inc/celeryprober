@@ -12,8 +12,8 @@ import (
 )
 
 func RunRESTServer() {
-	// Register probe metrics before starting the server
-	registerProbeMetrics()
+	// Register metrics before starting the server
+	RegisterMetrics()
 
 	// Initializing fiber
 	app := fiber.New(fiber.Config{
