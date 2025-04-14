@@ -47,8 +47,8 @@ func (report *DailyReport) SentToSlack() {
 
 // processCronForProbe processes the cron job for a single probe
 func processCronForProbe(ctx context.Context, probe *ProbeConfig) {
-	logEvent := LogEvent(probe.Name)
-	logEvent.Str("action", "cron_job").Msg("Processing cron job")
+	logEvent := LogEvent(probe.Name).Str("action", "cron_job")
+	logEvent.Msg("Processing cron job")
 
 	// Initialize Redis client for this probe
 	redisClientOptions, err := redis.ParseURL(probe.CeleryRedisBrokerURL)
@@ -72,11 +72,11 @@ func processCronForProbe(ctx context.Context, probe *ProbeConfig) {
 		return
 	}
 
-	logEvent.Int("stale_task_count", len(result)).Msg("Retrieved stale tasks")
+	LogEvent(probe.Name).Str("action", "cron_job").Int("stale_task_count", len(result)).Msg("Retrieved stale tasks")
 
 	// Skip further processing if no tasks found
 	if len(result) == 0 {
-		logEvent.Msg("No stale tasks found")
+		LogEvent(probe.Name).Str("action", "cron_job").Msg("No stale tasks found")
 		return
 	}
 
@@ -90,6 +90,7 @@ func processCronForProbe(ctx context.Context, probe *ProbeConfig) {
 		if err := json.Unmarshal([]byte(stats_json), stats); err != nil {
 			LogErrorEvent(probe.Name, err).
 				Str("task_id", task_id).
+				Str("raw_stats", stats_json).
 				Msg("Failed to parse task stats")
 			continue
 		}
@@ -147,7 +148,7 @@ func processCronForProbe(ctx context.Context, probe *ProbeConfig) {
 		if err != nil {
 			LogErrorEvent(probe.Name, err).Msg("Failed to send Slack report")
 		} else {
-			logEvent.Int("status_code", status_code).Int("task_count", len(task_id_list)).Msg("Sent stale tasks report to Slack")
+			LogEvent(probe.Name).Str("action", "cron_job").Int("status_code", status_code).Int("task_count", len(task_id_list)).Msg("Sent stale tasks report to Slack")
 		}
 
 		// Also upload the full report as JSON for detailed analysis
@@ -168,7 +169,7 @@ func processCronForProbe(ctx context.Context, probe *ProbeConfig) {
 			if err != nil {
 				LogErrorEvent(probe.Name, err).Msg("Failed to upload report file to Slack")
 			} else {
-				logEvent.Msg("Uploaded detailed report file to Slack")
+				LogEvent(probe.Name).Str("action", "cron_job").Msg("Uploaded detailed report file to Slack")
 			}
 		}
 	}
@@ -179,7 +180,7 @@ func processCronForProbe(ctx context.Context, probe *ProbeConfig) {
 		if err != nil {
 			LogErrorEvent(probe.Name, err).Msg("Failed to delete task objects from Redis")
 		} else {
-			logEvent.Int("deleted_count", int(deleted_key_count)).Msg("Cleaned up stale tasks from Redis")
+			LogEvent(probe.Name).Str("action", "cron_job").Int("deleted_count", int(deleted_key_count)).Msg("Cleaned up stale tasks from Redis")
 		}
 	}
 }

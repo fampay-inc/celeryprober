@@ -136,7 +136,8 @@ func LogWarnEvent(probeName string) *zerolog.Event {
 
 // LogErrorEvent creates a structured error log event with standardized fields
 func LogErrorEvent(probeName string, err error) *zerolog.Event {
-	return Log.Error().Str("probe", probeName).Err(err)
+	// Log error message as a simple string to avoid potential marshalling issues
+	return Log.Error().Str("probe", probeName).Str("error", err.Error())
 }
 
 // FormatArgs converts variadic arguments to a string for compatibility with legacy logging
