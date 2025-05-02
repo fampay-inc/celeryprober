@@ -109,21 +109,52 @@ func (p *Probe) Shutdown(ctx context.Context) {
 		return
 	}
 
+	LogEvent(p.Config.Name).Msg("Closing PubSub channel...")
 	// Close PubSub and wait for consumer to finish
-	p.PubSub.Close()
+	p.PubSub.Close() // This signals consumePubSubChannel loop to exit
 	p.WaitGroup.PubSubChannelConsumer.Wait()
+	LogEvent(p.Config.Name).Msg("PubSub channel listener stopped.")
 
-	// Wait for scheduled callbacks to be executed
-	LogEvent(p.Config.Name).Msg("Waiting for scheduled callbacks to complete")
+	LogEvent(p.Config.Name).Msg("Stopping pending task callbacks...")
+	// Stop any pending AfterFunc timers and decrement the WaitGroup accordingly
+	p.TaskStatsMapMutex.RLock() // Lock for reading
+	for _, stats := range p.TaskStatsMap {
+		if stats.callBackTimer != nil {
+			// Attempt to stop the timer
+			if stats.callBackTimer.Stop() {
+				// Timer was stopped successfully before firing.
+				// Manually decrement the WaitGroup as the callback's defer won't run.
+				p.WaitGroup.Callback.Done()
+			}
+			// If Stop() returned false, the callback is already running or finished.
+			// Its defer p.WaitGroup.Callback.Done() will handle the decrement.
+		}
+	}
+	p.TaskStatsMapMutex.RUnlock() // Unlock after reading
+	LogEvent(p.Config.Name).Msg("Pending task callbacks stopped.")
+
+	// Wait for any remaining scheduled callbacks (those already running when Stop() was called)
+	LogEvent(p.Config.Name).Msg("Waiting for active callbacks to complete...")
 	p.WaitGroup.Callback.Wait()
+	LogEvent(p.Config.Name).Msg("Active callbacks completed.")
+
 
 	// Close stale task channel and wait for consumer to finish
-	LogEvent(p.Config.Name).Msg("Waiting for stale tasks to be processed")
+	LogEvent(p.Config.Name).Msg("Closing stale task channel...")
 	close(p.StaleTaskChannel)
 	p.WaitGroup.StaleTaskChannelConsumer.Wait()
+	LogEvent(p.Config.Name).Msg("Stale task processor stopped.")
+
 
 	// Close Redis client
-	p.RedisClient.Close()
+	LogEvent(p.Config.Name).Msg("Closing Redis client...")
+	err := p.RedisClient.Close()
+	if err != nil {
+		LogErrorEvent(p.Config.Name, err).Msg("Error closing Redis client")
+	} else {
+		LogEvent(p.Config.Name).Msg("Redis client closed.")
+	}
+
 
 	LogEvent(p.Config.Name).Msg("Probe stopped gracefully")
 }
