@@ -1,23 +1,26 @@
 {
   "probes": [
     {
-      "name": "westeros-prod",
+      "name": "bran-prod",
       "enabled": true,
-      "description": "Monitors Celery tasks for the westeros service",
+      "description": "Monitors Celery tasks for the bran service",
       "celery_redis_broker_url": "redis://localhost:6379/0",
-      "stale_task_set_key": "westeros_stale_tasks",
+      "stale_task_set_key": "bran_stale_tasks",
       "stale_task_callback_context_timeout_sec": 5,
       "stale_task_callback_delay_duration_min": 15
     },
     {
-      "name": "ironbank-prod",
+      "name": "hodor-prod",
       "enabled": true,
-      "description": "Monitors Celery tasks for the ironbank service",
+      "description": "Monitors Celery tasks for the hodor service",
       "celery_redis_broker_url": "redis://localhost:6379/1",
-      "stale_task_set_key": "ironbank_stale_tasks",
+      "stale_task_set_key": "hodor_stale_tasks",
       "stale_task_callback_context_timeout_sec": 5,
       "stale_task_callback_delay_duration_min": 15,
-      "blacklisted_task_names": ["upi_debit_ingestion_slave", "check_billpayment_order_status"]
+      "blacklisted_task_names": [
+        "test_task",
+        "dont_alert_on_this_task"
+      ]
     }
   ]
 }
